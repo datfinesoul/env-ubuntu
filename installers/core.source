@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 
+readlink='readlink'
+readlink -e /tmp > /dev/null 2>&1
+if [[ "$?" -ne 0 ]]; then
+  readlink='greadlink'
+fi
+
 # full path to parent script
-SCRIPT="$(readlink -e -- "${0}")"
+SCRIPT="$("${readlink}" -e -- "${0}")"
 # parent script file name
 SCRIPT_BASE="$(basename "${SCRIPT}")"
 
 # full path to this file
-SOURCE_FILE="$(readlink -e -- "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")"
+SOURCE_FILE="$("${readlink}" -e -- "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")"
 # directory of this file
 SOURCE_DIR="$(dirname "${SOURCE_FILE}")"
 

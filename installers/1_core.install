@@ -2,7 +2,11 @@
 # shellcheck disable=SC1090
 source "$(dirname "$(readlink -e -- "$0")")/core.source"
 
-sudo apt-get -y update
-sudo apt-get -y upgrade
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  true
+else
+  sudo apt-get -y update
+  sudo apt-get -y upgrade
 
-sudo apt -y install $(< "${SOURCE_DIR}/1_core.packages")
+  sudo apt -y install $(< "${SOURCE_DIR}/1_core.packages")
+fi

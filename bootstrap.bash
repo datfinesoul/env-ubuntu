@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
-SCRIPT="$(readlink -e -- "${0}")"
-SCRIPT_DIR="$(dirname "${SCRIPT}")"
 
 # http://redsymbol.net/articles/unofficial-bash-strict-mode/
 set -o errexit
 set -o nounset
 set -o pipefail
 IFS=$'\n\t'
+
+# on mac, most of the scripts require coreutils so this has to happen first
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  which brew > /dev/null 2>&1 \
+    || /bin/bash -c "$( \
+    curl -fsSL 'https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh' \
+    )"
+  brew install coreutils
+  PATH="/usr/local/opt/coreutils/libexec/gnubin:$PATH"
+  export PATH
+  echo ':: finished'
+fi
+
+SCRIPT="$(readlink -e -- "${0}")"
+SCRIPT_DIR="$(dirname "${SCRIPT}")"
 
 if [[ "${SCRIPT_DIR}" != "$(readlink -e -- "$(pwd)")" ]]; then
   echo "please execute this script from its own directory"
@@ -34,15 +47,21 @@ LOG="/tmp/bootstrap.bash.log"
 # log stdout/stderr to a file and stdout
 exec &> >(tee "${LOG}")
 
-sudo apt-get --assume-yes update
-sudo apt-get --assume-yes install \
-  unzip \
-  jq \
-  bat
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  true
+else
+  sudo apt-get --assume-yes update
+  sudo apt-get --assume-yes install \
+    unzip \
+    jq \
+    bat
+fi
 
 for SCRIPT in installers/*.install; do
   "${SCRIPT}"
 done
+
+exit 1
 
 # this needs to be cleared to make sure old files are not included in later
 # package installations
