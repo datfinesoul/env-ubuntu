@@ -4,14 +4,28 @@ source "$(dirname "$(readlink -e -- "$0")")/core.source"
 
 VERSION="${1:-0.12.26}"
 TARGET="/usr/local/bin/terraform"
-ARCHITECTURE="$(dpkg --print-architecture)"
 
-wget \
-  --quiet \
-  "$(printf '%s' \
-  "https://releases.hashicorp.com/terraform" \
-  "/${VERSION}/terraform_${VERSION}_linux_${ARCHITECTURE}.zip" \
-  )"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  wget \
+    --quiet \
+    "$(printf '%s' \
+    "https://releases.hashicorp.com/terraform" \
+    "/${VERSION}/terraform_${VERSION}_darwin_amd64.zip" \
+    )"
+else
+  ARCHITECTURE="$(dpkg --print-architecture)"
+  wget \
+    --quiet \
+    "$(printf '%s' \
+    "https://releases.hashicorp.com/terraform" \
+    "/${VERSION}/terraform_${VERSION}_linux_${ARCHITECTURE}.zip" \
+    )"
+fi
+
 unzip terraform_*.zip
 sudo mv "terraform" "${TARGET}"
-sudo ln --symbolic --force "${TARGET}" "/usr/local/bin/tf"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  sudo ln -sf "${TARGET}" "/usr/local/bin/tf"
+else
+  sudo ln --symbolic --force "${TARGET}" "/usr/local/bin/tf"
+fi
