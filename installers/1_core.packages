@@ -13,7 +13,6 @@ htop
 gawk
 percol
 net-tools
-ripgrep
 traceroute
 shellcheck
 ipcalc

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1090
+source "$(dirname "$(readlink -e -- "$0")")/core.source"
+
+curl -sf https://gobinaries.com/chriswalz/bit | sh;
+bit complete;

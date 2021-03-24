@@ -53,8 +53,8 @@ else
   sudo apt-get --assume-yes update
   sudo apt-get --assume-yes install \
     unzip \
-    jq \
-    bat
+    jq
+  sudo apt-get install -o Dpkg::Options::="--force-overwrite" bat ripgrep
 fi
 
 for SCRIPT in installers/*.install; do

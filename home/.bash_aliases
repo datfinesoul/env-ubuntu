@@ -50,8 +50,7 @@ alias recolor="source $HOME/.config/base16-shell/base16-default.dark.sh"
 
 alias k=kubectl
 
-alias gitroot=$'cd $(git rev-parse --show-toplevel)'
-alias tfver="${HOME}/env-ubuntu/installers/terraform-cli.install.manual"
+alias tfver="${HOME}/env-ubuntu/installers/terraform-cli.install"
 which bat > /dev/null || alias bat='batcat'
 
 # AT HOME ONLY
@@ -63,3 +62,4 @@ alias purge="printf '\x1b[2J\x1b[3J\x1b[1;1H'"
 #history + percol - date
 alias hp="history | percol --match-method regex | awk '{\$1=\$2=\$3=\"\"; print \$0;}'"
 alias bu='brew update; brew upgrade; brew cleanup; brew doctor && brew cask upgrade; brew cask doctor'
+alias cat='bat -p'
