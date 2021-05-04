@@ -37,8 +37,13 @@ rm -rf "${HOME}/.vim"
 rsync \
   --archive \
   --verbose \
-  "./home/" \
-  "${HOME}"
+  "./home/.vim" \
+  "${HOME}/.vim"
+rsync \
+  --archive \
+  --verbose \
+  "./home/.vimrc" \
+  "${HOME}/.vimrc"
 
 # vim specific stuff
 pushd "${HOME}/.vim/pack/datfinesoul/start/coc.nvim"

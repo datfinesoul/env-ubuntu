@@ -58,6 +58,7 @@
 	merged = branch -r --merged
 	rebase-preserve = rebase --committer-date-is-author-date
 	own = "!git lg --name-only --author=\"$(git config user.name)\""
+	sl = shortlog --summary --numbered --email --all
 
 [color]
 	status = auto
@@ -93,7 +94,7 @@
 	required = true
 [user]
 	name = Philip Hadviger
-	email = philip.hadviger@phad.me
+	email = 613305+datfinesoul@users.noreply.github.com
 	signingkey = 1BED55DC688A3C33
 [fetch]
 	prune = true
