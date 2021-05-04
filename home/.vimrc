@@ -2,7 +2,6 @@ set nocompatible              " be iMproved, required
 
 let g:polyglot_disabled = ['hcl']
 
-execute pathogen#infect()
 syntax on
 filetype plugin indent on
 
@@ -33,18 +32,9 @@ set switchbuf=usetab,newtab     " open new buffers always in new tabs
 nnoremap <F3> :set invpaste paste?<CR>
 set pastetoggle=<F3>
 
-"let g:ctrlp_custom_ignore = '\.vagrant\|\.git\|node_modules\|DS_Store\|bower_components\|platforms'
-let g:ctrlp_custom_ignore = {
-	\   'dir' : '\.git$\|\.vagrant$\|bower_components\|node_modules' ,
-	\ 	'file' : '\v\.(exe|dll|lib)$\|DS_Store'
-	\ }
-"let g:ctrlp_custom_ignore = {
-  "\ 'dir':  '\.git$\|\.hg$\|\.svn$\|\.yardoc$',
-  "\ 'file': '\.exe$\|\.so$\|\.dat$'
-  "\ }
-let g:ctrlp_dotfiles = 1
-
 map <Leader><Space> :let @/=""<CR>
+nnoremap <silent> <Leader>= :Files<CR>
+nnoremap <silent> <Leader>- :GFiles?<CR>
 
 set number                      " Show line numbers
 set norelativenumber            " Show numbers relative to current line
@@ -55,12 +45,15 @@ inoremap <F2> <C-O>:set invnumber<CR>
 set textwidth=0 wrapmargin=0
 set nowrap " Don't wrap lines
 
-"let g:js_indent_log=1
-nnoremap <Leader>m :w <BAR> !lessc % > %:p:r.css<CR><space>
-
 let g:is_bash=1
 
-map <F7> mzgg=G`z<CR>
+nnoremap <F7> mzgg=G'z
+inoremap <F7> <ESC>mzgg=G'z
+
+nnoremap <F4> :%!jq --tab .<CR>
+
+inoremap <silent> <PageUp> <ESC><PageUp>
+inoremap <silent> <PageDown> <ESC><PageDown>
 
 function! ClearUndo()
 	let choice = confirm("Clear undo information?", "&Yes\n&No", 2)
@@ -81,8 +74,6 @@ colorscheme base16-default-dark
 
 set t_Co=256
 
-" enable ctrlp
-set runtimepath^=~/.vim/bundle/ctrlp
 " helps activete vim-airline
 set laststatus=2
 " make insert mode pop instantly
@@ -120,10 +111,6 @@ vnoremap <silent> * :<C-U>
 "set clipboard=unnamed
 
 let g:javascript_opfirst = 1
-
-if executable('ag')
-  let g:ctrlp_user_command = 'ag %s -l --nocolor --hidden -g "" --ignore "nodes_modules" --ignore ".git"'
-endif
 
 " if hidden is not set, TextEdit might fail.
 set hidden
@@ -273,3 +260,6 @@ autocmd BufRead,BufNewFile Dockerfile.*,Dockerfile-* set filetype=dockerfile
 
 autocmd BufNewFile,BufRead *.nomad     set filetype=terraform
 let g:vim_jsx_pretty_colorful_config = 1
+let g:indentLine_fileTypeExclude = [ "json" ]
+let g:vim_json_syntax_conceal=1
+let g:vim_markdown_new_list_item_indent = 2

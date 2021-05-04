@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# full path to parent script
+SCRIPT="$(readlink -e -- "${0}")"
+# parent script file name
+SCRIPT_BASE="$(basename "${SCRIPT}")"
+
+# full path to this file
+SOURCE_FILE="$(readlink -e -- "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")"
+# directory of this file
+SOURCE_DIR="$(dirname "${SOURCE_FILE}")"
+
+if [[ "${SCRIPT_BASE}" == 'core.source' ]]; then
+  echo ":: cannot call core.source directly"
+  exit 1
+fi
+
+if [[ "$(id -u)" -eq "0" ]]; then
+  echo "please DO NOT run as root";
+  exit 1
+fi
+
+# http://redsymbol.net/articles/unofficial-bash-strict-mode/
+set -o errexit
+set -o nounset
+set -o pipefail
+IFS=$'\n\t'
+
+PID=$$
+LOG="/tmp/${SCRIPT_BASE}.log"
+
+# log stdout/stderr to a file and stdout
+exec &> >(tee "${LOG}")
+
+function cleanup {
+  # shellcheck disable=SC2154
+  if [ -n "${1:-}" ]; then
+    echo ":: ${SCRIPT_BASE}:${PID} Aborted by ${1:-}"
+  elif [ "${status}" -ne 0 ]; then
+    echo ":: ${SCRIPT_BASE}:${PID} Failure (status $status)"
+  else
+    echo ":: ${SCRIPT_BASE}:${PID} Success"
+  fi
+}
+export -f cleanup
+trap 'status=$?; cleanup; exit $status' EXIT
+trap 'trap - HUP; cleanup SIGHUP; kill -HUP $$' HUP
+trap 'trap - INT; cleanup SIGINT; kill -INT $$' INT
+trap 'trap - TERM; cleanup SIGTERM; kill -TERM $$' TERM

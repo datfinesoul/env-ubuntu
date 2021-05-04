@@ -1,0 +1,25 @@
+From 695b2679383054bbff72601f1cff099221ad2f91 Mon Sep 17 00:00:00 2001
+From: Philip Hadviger <philip.hadviger@phad.me>
+Date: Fri, 16 Apr 2021 11:13:15 +0900
+Subject: [PATCH] monkeypatch json inline problem
+
+---
+ home/.vim/pack/datfinesoul/start/vim-polyglot/syntax/json.vim | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/home/.vim/pack/datfinesoul/start/vim-polyglot/syntax/json.vim b/home/.vim/pack/datfinesoul/start/vim-polyglot/syntax/json.vim
+index fb010416..71350421 100644
+--- a/home/.vim/pack/datfinesoul/start/vim-polyglot/syntax/json.vim
++++ b/home/.vim/pack/datfinesoul/start/vim-polyglot/syntax/json.vim
+@@ -9,7 +9,7 @@ endif
+ 
+ " Reload the definition of g:vim_json_syntax_conceal
+ " see https://github.com/elzr/vim-json/issues/42
+-runtime! ftplugin/json.vim
++"runtime! ftplugin/json.vim
+ 
+ if !exists("main_syntax")
+   if version < 600
+-- 
+2.31.1
+

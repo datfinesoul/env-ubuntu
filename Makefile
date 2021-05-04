@@ -33,3 +33,5 @@ ifdef file
 else
 	@echo No file provided
 endif
+
+.PHONEY: main build rebuild run lint lint_one

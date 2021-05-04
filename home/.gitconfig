@@ -9,7 +9,7 @@
 	whitespace = -trailing-space
 	ignorecase = true
 	excludesfile = /Users/phadviger/.gitignore_global
-	editor = /usr/bin/vim
+	editor = /usr/local/bin/vim
 	pager = less -FXRS -x2
 [diff]
 	renames = copies
