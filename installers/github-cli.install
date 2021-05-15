@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1090
+source "$(dirname "$(readlink -e -- "$0")")/core.source"
+
+if [[ "$(which gh > /dev/null && echo "found" || echo "missing")" == "missing" ]]; then
+  echo ":: installing"
+  sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
+  sudo apt-add-repository https://cli.github.com/packages
+else
+  echo ":: updating"
+fi
+  sudo apt-get --yes update
+  sudo apt-get --yes install gh

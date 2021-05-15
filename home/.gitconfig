@@ -95,7 +95,7 @@
 [user]
 	name = Philip Hadviger
 	email = 613305+datfinesoul@users.noreply.github.com
-	signingkey = 1BED55DC688A3C33
+	signingkey = 4A4F755890424725
 [fetch]
 	prune = true
 [status]

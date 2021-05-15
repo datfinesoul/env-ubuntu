@@ -36,6 +36,7 @@ fi
 #    4. delete undesired fields
 # 3. create a list of key=value strings export
 while IFS=$'\n\t' read -r LINE; do
+	echo "${LINE%%=*}"
 	export "${LINE}"
 done < <(bw list items \
 	--folderid "${FOLDER_ID}" \
