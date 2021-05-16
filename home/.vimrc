@@ -33,8 +33,8 @@ nnoremap <F3> :set invpaste paste?<CR>
 set pastetoggle=<F3>
 
 map <Leader><Space> :let @/=""<CR>
-nnoremap <silent> <Leader>= :Files<CR>
-nnoremap <silent> <Leader>- :GFiles?<CR>
+nnoremap <silent> <Leader>= :Files!<CR>
+nnoremap <silent> <Leader>- :GFiles!?<CR>
 
 set number                      " Show line numbers
 set norelativenumber            " Show numbers relative to current line
@@ -263,3 +263,6 @@ let g:vim_jsx_pretty_colorful_config = 1
 let g:indentLine_fileTypeExclude = [ "json" ]
 let g:vim_json_syntax_conceal=1
 let g:vim_markdown_new_list_item_indent = 2
+
+let g:fzf_preview_window = ['up:50%:hidden', 'ctrl-/']
+
