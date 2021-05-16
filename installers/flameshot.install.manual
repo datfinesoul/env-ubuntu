@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1090
+source "$(dirname "$(readlink -e -- "$0")")/core.source"
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  brew install --cask flameshot
+else
+  echo "linux install missing"
+fi

@@ -38,7 +38,7 @@ rsync \
   --archive \
   --verbose \
   "./home/.vim" \
-  "${HOME}/.vim"
+  "${HOME}/"
 rsync \
   --archive \
   --verbose \
