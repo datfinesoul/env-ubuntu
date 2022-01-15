@@ -98,7 +98,7 @@
     "isuri": "^2.0.3",
     "jsonc-parser": "^2.3.1",
     "log4js": "^6.3.0",
-    "marked": "^1.2.5",
+    "marked": "^4.0.10",
     "minimatch": "^3.0.4",
     "promise.prototype.finally": "^3.1.2",
     "rc": "^1.2.8",
