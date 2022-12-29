@@ -29,10 +29,11 @@ aws-sso-creds() {
   cache_sha="$(echo -n "$start_url" | sha1sum | awk '{print $1}')"
   cache_file="${HOME}/.aws/sso/cache/${cache_sha}.json"
 
-  local access_token
+  local access_token payload
   access_token="$(<"${cache_file}" jq -rM '.accessToken')"
-  # the <<<"$(cat <())" hack is for OSX bash 3.2
-  . /dev/stdin <<<"$(cat <(aws sso get-role-credentials \
+  # the . /dev/stdin <<< "$(cat <())" hack is for OSX bash 3.2
+  # https://stackoverflow.com/questions/32596123/why-source-command-doesnt-work-with-process-substitution-in-bash-3-2
+  payload="$(aws sso get-role-credentials \
     --account-id "${account_id}" \
     --role-name "${role_name}" \
     --region "${region}" \
@@ -46,8 +47,10 @@ aws-sso-creds() {
         "AWS_SESSION_TOKEN": .sessionToken,
         "AWS_CREDENTIALS_EXPIRATION": (.expiration / 1000 | todate)
       } | keys[] as $k | "export \($k)=\(.[$k])"'
-  ))"
-  export AWS_REGION="${region}"
-  unset AWS_PROFILE
-  env | grep AWS_
+  )"
+  if [[ -n "${payload}" ]]; then
+    . /dev/stdin <<<"$(echo "${payload}")"
+    export AWS_REGION="${region}"
+    unset AWS_PROFILE
+  fi
 }
