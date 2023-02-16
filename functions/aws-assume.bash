@@ -1,6 +1,6 @@
 aws-assume() {
   # if a profile was set, remove all the other creds
-  if [[ -n "${AWS_PROFILE}"]]; then
+  if [[ -n "${AWS_PROFILE}" ]]; then
     unset \
       AWS_ACCESS_KEY_ID \
       AWS_SECRET_ACCESS_KEY \
