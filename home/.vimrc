@@ -109,7 +109,7 @@ vnoremap <silent> * :<C-U>
   \gV:call setreg('"', old_reg, old_regtype)<CR>
 
 " use OS clipboard
-set clipboard=unnamedplus
+"set clipboard=unnamedplus
 
 let g:javascript_opfirst = 1
 
