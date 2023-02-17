@@ -16,3 +16,4 @@ ipcalc
 keyutils
 tree
 moreutils
+build-essential
