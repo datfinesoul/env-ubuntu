@@ -1,0 +1,50 @@
+#!/usr/bin/env /usr/local/bin/env-ubuntu-core
+# NOTE: OSX requires shebang to be binary file not script, this is the workaround
+# shellcheck disable=SC1090
+. "${SCRIPT_DIR}/core.source"
+
+REPO="glg/gdsservice"
+
+# Only change the above
+
+KERNEL_NAME="$(uname -s)" # Darwin/Linux
+MACHINE="$(uname -m)"
+if [[ "${MACHINE}" == "x86_64" ]]; then
+  ARCHITECTURE="amd64"
+else
+  ARCHITECTURE="arm64"
+fi
+
+# NOTE: sometimes you need ${KERNEL_NAME,,}
+read -r VERSION URL <<< "$(gh api "/repos/${REPO}/releases/latest" \
+  | jq \
+  --arg k "${KERNEL_NAME}" \
+  --arg a "${ARCHITECTURE}" \
+  --arg m "${MACHINE}" \
+  -r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$m)))] | @tsv' \
+)"
+
+ZIP_FILE="${URL##*/}"
+EXECUTABLE="${REPO##*/}"
+VERSIONED_EXE="${EXECUTABLE}_${VERSION}"
+
+gh release download "${VERSION}" -R "${REPO}" -p "${ZIP_FILE}"
+
+TARGET_DIR="${HOME}/.local/${EXECUTABLE}"
+BIN_DIR="${HOME}/.local/bin"
+
+mkdir -p "${TARGET_DIR}"
+mkdir -p "${BIN_DIR}"
+
+tar -xf "${ZIP_FILE}"
+#unzip "${ZIP_FILE}"
+
+mv "${EXECUTABLE}" "${TARGET_DIR}/${VERSIONED_EXE}"
+
+if [[ "${KERNEL_NAME}" == "Darwin" ]]; then
+  ln -sf "${TARGET_DIR}/${VERSIONED_EXE}" "${BIN_DIR}/${EXECUTABLE}"
+else
+  ln --symbolic --force "${TARGET_DIR}/${VERSIONED_EXE}" "${BIN_DIR}/${EXECUTABLE}"
+fi
+
+# vim: set ft=bash :
