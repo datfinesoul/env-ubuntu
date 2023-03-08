@@ -22,4 +22,6 @@ git-branch-clean-squashed () {
 		&& [[ $(git cherry ${BRANCH} $(git commit-tree $(git rev-parse "$branch^{tree}") -p $mergeBase -m _)) == "-"* ]] \
 		&& echo "$branch"; \
 	done
+
+	>&2 echo "git-branch-clean-squashed ${BRANCH} | xargs -I{} -n1 git branch -D {}"
 }

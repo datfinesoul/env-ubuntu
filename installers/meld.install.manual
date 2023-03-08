@@ -1,0 +1,25 @@
+#!/usr/bin/env /usr/local/bin/env-ubuntu-core
+# NOTE: OSX requires shebang to be binary file not script, this is the workaround
+# shellcheck disable=SC1090
+. "${SCRIPT_DIR}/core.source"
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  true
+else
+  sudo apt-get --yes update
+  sudo apt-get --yes install \
+    cmake \
+    libgtk-3-dev \
+    libgtksourceview-4-dev \
+    python-gi-dev \
+    python3-gi-cairo
+
+  git clone 'https://gitlab.gnome.org/GNOME/meld.git'
+  cd meld
+  meson -Dprefix="${HOME}/.local/bin" _build
+  cd _build
+  ninja
+  ninja install
+fi
+
+# vim: set ft=bash :

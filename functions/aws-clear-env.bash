@@ -1,3 +1,5 @@
 aws-clear-env() {
-  unset AWS_PROFILE AWS_SECRET_ACCESS_KEY AWS_ACCESS_KEY_ID AWS_CREDENTIALS_EXPIRATION AWS_SESSION_TOKEN
+  local VARS
+  mapfile -t VARS < <(env | awk -F'=' '/^AWS_/ {print $1}')
+  unset "${VARS[@]}"
 }
