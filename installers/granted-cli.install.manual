@@ -1,0 +1,48 @@
+#!/usr/bin/env /usr/local/bin/env-ubuntu-core
+# NOTE: OSX requires shebang to be binary file not script, this is the workaround
+# shellcheck disable=SC1090
+. "${SCRIPT_DIR}/core.source"
+
+REPO="glg/gdsservice"
+
+# Only change the above
+
+KERNEL_NAME="$(uname -s)" # Darwin/Linux
+MACHINE="$(uname -m)"
+if [[ "${MACHINE}" == "x86_64" ]]; then
+  ARCHITECTURE="amd64"
+else
+  ARCHITECTURE="arm64"
+fi
+
+VERSION="0.9.1"
+ZIP_FILE="granted_${VERSION}_linux_${MACHINE}.tar.gz"
+URL="https://releases.commonfate.io/granted/v${VERSION}/${ZIP_FILE}"
+
+EXECUTABLE="${REPO##*/}"
+VERSIONED_EXE="${EXECUTABLE}_${VERSION}"
+
+
+#TARGET_DIR="${HOME}/.local/${EXECUTABLE}"
+#BIN_DIR="${HOME}/.local/bin"
+
+#mkdir -p "${TARGET_DIR}"
+#mkdir -p "${BIN_DIR}"
+
+#tar -xf "${ZIP_FILE}"
+#unzip "${ZIP_FILE}"
+
+#mv "${EXECUTABLE}" "${TARGET_DIR}/${VERSIONED_EXE}"
+
+if [[ "${KERNEL_NAME}" == "Darwin" ]]; then
+  #ln -sf "${TARGET_DIR}/${VERSIONED_EXE}" "${BIN_DIR}/${EXECUTABLE}"
+  false
+else
+  curl -OL "${URL}"
+  tar -zxvf "./${ZIP_FILE}"
+
+
+  #ln --symbolic --force "${TARGET_DIR}/${VERSIONED_EXE}" "${BIN_DIR}/${EXECUTABLE}"
+fi
+
+# vim: set ft=bash :
