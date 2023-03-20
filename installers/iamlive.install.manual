@@ -3,7 +3,7 @@
 # shellcheck disable=SC1090
 . "${SCRIPT_DIR}/core.source"
 
-VERSION="${1:-0.49.0}"
+VERSION="${1:-0.51.2}"
 TARGET="/usr/local/bin/iamlive"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then

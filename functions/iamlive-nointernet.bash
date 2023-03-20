@@ -8,7 +8,7 @@ sudo ip6tables -A OUTPUT -m owner --gid-owner no-internet -j DROP
 fi
 if [[ "${1:-}" == "--proxy" ]]; then
 	shift
-	sudo -g no-internet "$(which iamlive)" --mode proxy
+	sudo -g no-internet "$(which iamlive)" --set-ini --profile "${AWS_PROFILE}" --mode proxy --output-file ./iam.json
 else
 	sudo -g no-internet "$(which iamlive)"
 fi
