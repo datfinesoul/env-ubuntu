@@ -63,3 +63,4 @@ alias hp="history | percol --match-method regex | awk '{\$1=\$2=\$3=\"\"; print 
 alias bu='brew update; brew upgrade; brew cleanup; brew doctor && brew cask upgrade; brew cask doctor'
 alias bat >& /dev/null && alias cat='bat -p'
 alias sso='export AWS_PROFILE=$(sed -n "s/\[profile \(.*\)\]/\1/gp" ~/.aws/config | fzf)'
+alias assume="source assume"
