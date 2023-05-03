@@ -61,6 +61,7 @@ alias purge="printf '\x1b[2J\x1b[3J\x1b[1;1H'"
 #history + percol - date
 alias hp="history | percol --match-method regex | awk '{\$1=\$2=\$3=\"\"; print \$0;}'"
 alias bu='brew update; brew upgrade; brew cleanup; brew doctor && brew cask upgrade; brew cask doctor'
-alias bat >& /dev/null && alias cat='bat -p'
+alias bat &> /dev/null && alias cat='bat -pp'
 alias sso='export AWS_PROFILE=$(sed -n "s/\[profile \(.*\)\]/\1/gp" ~/.aws/config | fzf)'
 alias assume="source assume"
+alias iambic="docker run -it -u $(id -u):$(id -g) -v ${HOME}/.aws:/app/.aws:ro -e AWS_CONFIG_FILE=/app/.aws/config -e AWS_SHARED_CREDENTIALS_FILE=/app/.aws/credentials -e "AWS_PROFILE" -e HOME=/app -v /home/datfinesoul/github/undefined-io/iambic-templates:/templates:Z public.ecr.aws/iambic/iambic:latest"
