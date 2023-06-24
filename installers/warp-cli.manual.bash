@@ -1,7 +1,6 @@
-#!/usr/bin/env /usr/local/bin/env-ubuntu-core
-# NOTE: OSX requires shebang to be binary file not script, this is the workaround
-# shellcheck disable=SC1090
-. "${SCRIPT_DIR}/core.source"
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source '_core.bash'
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   :

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1090
-source "$(dirname "$(readlink -e -- "$0")")/core.source"
+# shellcheck disable=SC1091
+source '_core.bash'
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   true

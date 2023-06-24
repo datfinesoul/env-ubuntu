@@ -1,7 +1,6 @@
-#!/usr/bin/env /home/phadviger/env-ubuntu/env-ubuntu-core
-# NOTE: OSX requires shebang to be binary file not script, this is the workaround
-# shellcheck disable=SC1090
-. "${SCRIPT_DIR}/core.source"
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source '_core.bash'
 
 node --version
 

@@ -1,7 +1,6 @@
-#!/usr/bin/env /usr/local/bin/env-ubuntu-core
-# NOTE: OSX requires shebang to be binary file not script, this is the workaround
-# shellcheck disable=SC1090
-. "${SCRIPT_DIR}/core.source"
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source '_core.bash'
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
@@ -18,5 +17,3 @@ else
     -o "session-manager-plugin.deb"
       sudo dpkg -i "session-manager-plugin.deb"
 fi
-
-# vim: set ft=bash :
