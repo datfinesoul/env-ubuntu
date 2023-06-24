@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-source './_core.bash'
+# shellcheck disable=SC1091
+source '_core.bash'
 
 ### MODIFY: START
 repo="nektos/act"
