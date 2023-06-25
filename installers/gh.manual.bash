@@ -1,10 +1,9 @@
-#!/usr/bin/env /usr/local/bin/env-ubuntu-core
-# NOTE: OSX requires shebang to be binary file not script, this is the workaround
-# shellcheck disable=SC1090
-. "${SCRIPT_DIR}/core.source"
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source '_core.bash'
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  brew upgrade gh || brew install gh
+  brew install gh
 else
   if [[ "$(which gh > /dev/null && echo "found" || echo "missing")" == "missing" ]]; then
     echo ":: installing"
@@ -19,5 +18,3 @@ else
   sudo apt-get --yes update
   sudo apt-get --yes install gh
 fi
-
-# vim: set ft=bash :

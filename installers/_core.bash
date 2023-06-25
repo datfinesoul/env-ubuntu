@@ -18,7 +18,7 @@ else
   architecture="arm64"
 fi
 
-info "K:${kernel_name}"
+info "KN:${kernel_name}"
 info "M:${machine}"
 info "A:${architecture}"
 
