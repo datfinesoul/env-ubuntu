@@ -2,7 +2,8 @@
 # shellcheck disable=SC1091
 source '_core.bash'
 
-if [[ "$(uname -s)" == "Darwin" ]]; then
+# https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html
+if [[ "${kernel_name}" == "Darwin" ]]; then
 	>&2 echo 'No Darwin Install'
 else
 	curl -L 'https://sw.kovidgoyal.net/kitty/installer.sh' | \
