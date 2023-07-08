@@ -275,3 +275,5 @@ function! DeleteBlankLines() range
 endfunction
 vnoremap <leader>dl :call DeleteBlankLines()<CR>:silent! noh<CR>
 nnoremap <leader>dl :g/^\s*$/d_<Bar>:silent! noh<CR>
+
+set listchars=eol:¬,tab:>·,trail:~,extends:>,precedes:<,space:␣

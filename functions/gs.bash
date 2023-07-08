@@ -12,5 +12,6 @@ gs (){
 		>&2 find "${tld}"/_dev/gs-targets -type l -printf '%f\n'
 		return
 	fi
-	"${tld}/_dev/gs-targets/${command}"
+	shift
+	"${tld}/_dev/gs-targets/${command}" "$@"
 }
