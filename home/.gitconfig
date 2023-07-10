@@ -59,6 +59,7 @@
 	rebase-preserve = rebase --committer-date-is-author-date
 	own = "!git lg --name-only --author=\"$(git config user.name)\""
 	sl = shortlog --summary --numbered --email --all
+	# git de origin/master package-lock.json docs
 	de = "!sh -c 'branch=\"$1\"; shift; paths=(); for arg do paths+=(\":(exclude)$arg\"); done; git diff \"$branch\" -- . \"${paths[@]}\"' -"
 	empty = commit -m trigger-checks --allow-empty
 
