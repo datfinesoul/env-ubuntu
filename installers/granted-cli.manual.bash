@@ -1,7 +1,6 @@
-#!/usr/bin/env /usr/local/bin/env-ubuntu-core
-# NOTE: OSX requires shebang to be binary file not script, this is the workaround
-# shellcheck disable=SC1090
-. "${SCRIPT_DIR}/core.source"
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/_core.bash"
 
 REPO="common-fate/granted"
 
@@ -50,5 +49,3 @@ else
   ln --symbolic --force "${TARGET_DIR}/assumego" "${BIN_DIR}/assumego"
   ln --symbolic --force "${TARGET_DIR}/granted" "${BIN_DIR}/granted"
 fi
-
-# vim: set ft=bash :

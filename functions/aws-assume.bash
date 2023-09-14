@@ -1,12 +1,12 @@
 aws-assume() {
   # if a profile was set, remove all the other creds
-  if [[ -n "${AWS_PROFILE}" ]]; then
-    unset \
-      AWS_ACCESS_KEY_ID \
-      AWS_SECRET_ACCESS_KEY \
-      AWS_SESSION_TOKEN \
-      AWS_CREDENTIALS_EXPIRATION
-  fi
+  #if [[ -n "${AWS_PROFILE}" && -z "${AWS_SESSION_EXPIRATION}" ]]; then
+  #  unset \
+  #    AWS_ACCESS_KEY_ID \
+  #    AWS_SECRET_ACCESS_KEY \
+  #    AWS_SESSION_TOKEN \
+  #    AWS_CREDENTIALS_EXPIRATION
+  #fi
 
   local role payload
   role="${1}"
@@ -24,6 +24,7 @@ aws-assume() {
       } | keys[] as $k | "export \($k)=\(.[$k])"'
   )"
   if [[ -n "${payload}" ]]; then
+    unset AWS_PROFILE
     # the . /dev/stdin <<< "$(cat <())" hack is for OSX bash 3.2
     # https://stackoverflow.com/questions/32596123/why-source-command-doesnt-work-with-process-substitution-in-bash-3-2
     . /dev/stdin <<<"$(echo "${payload}")"

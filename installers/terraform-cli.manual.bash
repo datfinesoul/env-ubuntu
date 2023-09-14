@@ -1,11 +1,10 @@
-#!/usr/bin/env /usr/local/bin/env-ubuntu-core
-# NOTE: OSX requires shebang to be binary file not script, this is the workaround
-# shellcheck disable=SC1090
-. "${SCRIPT_DIR}/core.source"
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/_core.bash"
 
 # TODO: Create a .env-ubuntu/version-config.json or something similar to manage
 #       installation preferences
-VERSION="${1:-1.1.9}"
+VERSION="${1:-1.5.5}"
 TF_DIR="${HOME}/.local/terraform"
 BIN_DIR="${HOME}/.local/bin"
 TF_EXE="${TF_DIR}/terraform_${VERSION}"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091
-source '_core.bash'
+source "$(dirname "${0}")/_core.bash"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"

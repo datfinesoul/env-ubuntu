@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091
-source '_core.bash'
+source "$(dirname "${0}")/_core.bash"
 
 # https://github.com/wagoodman/dive
 export VERSION="0.10.0"

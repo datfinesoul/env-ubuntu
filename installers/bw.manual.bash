@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091
-source '_core.bash'
+source "$(dirname "${0}")/_core.bash"
 
 node --version
-
 # Setting up snap (snap.d) inside a docker container is to hard,
 # so this script includes the nodejs install as well, which
 # is recommended anyways on bitwarden/cli

@@ -50,7 +50,7 @@ alias recolor="source $HOME/.config/base16-shell/base16-default.dark.sh"
 
 alias k=kubectl
 
-alias tfver="${HOME}/env-ubuntu/installers/terraform-cli.install.manual"
+alias tfver="${HOME}/env-ubuntu/installers/terraform-cli.manual.bash"
 which bat > /dev/null && alias bat='bat' || alias bat='batcat'
 
 # AT HOME ONLY
@@ -63,7 +63,6 @@ alias hp="history | percol --match-method regex | awk '{\$1=\$2=\$3=\"\"; print 
 alias bu='brew update; brew upgrade; brew cleanup; brew doctor && brew cask upgrade; brew cask doctor'
 alias bat &> /dev/null && alias cat='bat -pp'
 alias sso='export AWS_PROFILE=$(sed -n "s/\[profile \(.*\)\]/\1/gp" ~/.aws/config | fzf)'
-alias assume="source assume"
 alias iambic="docker run -it --rm -u $(id -u):$(id -g) \
 	-e AWS_CONFIG_FILE=/app/.aws/config \
 	-e AWS_SHARED_CREDENTIALS_FILE=/app/.aws/credentials \
@@ -88,3 +87,4 @@ alias iambic-beta="docker run -it --rm -u $(id -u):$(id -g) \
 	-v ${HOME}/github/undefined-io/iambic-templates:/templates:Z \
 	-v /tmp/iambic:/output \
 	datfinesoul/iambic:test"
+alias assume='GRANTED_ALIAS_CONFIGURED="true" . assume'

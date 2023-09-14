@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091
-source '_core.bash'
+source "$(dirname "${0}")/_core.bash"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   true
