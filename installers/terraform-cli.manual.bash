@@ -4,7 +4,7 @@ source "$(dirname "${0}")/_core.bash"
 
 # TODO: Create a .env-ubuntu/version-config.json or something similar to manage
 #       installation preferences
-VERSION="${1:-1.5.5}"
+VERSION="${1:-1.5.7}"
 TF_DIR="${HOME}/.local/terraform"
 BIN_DIR="${HOME}/.local/bin"
 TF_EXE="${TF_DIR}/terraform_${VERSION}"
