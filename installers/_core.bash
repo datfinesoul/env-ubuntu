@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
-info () { test ! -t 0 && >&2 sed "s|^|:: ${1:-}|g" || >&2 echo -e ":: $*"; }
-pass () { test ! -t 0 && >&2 sed "s|^|:✔ ${1:-}|g" || >&2 echo -e ":✔ $*"; }
-fail () { test ! -t 0 && >&2 sed "s|^|:✖ ${1:-}|g" || >&2 echo -e ":✖ $*"; }
+red="$(tput setaf 1)"
+green="$(tput setaf 2)"
+yellow="$(tput setaf 3)"
+cyan="$(tput setaf 6)"
+white="$(tput setaf 7)"
+reset="$(tput sgr0)"
+plain () { test ! -t 0 && >&2 cat || >&2 echo -e "$*"; }
+info () { test ! -t 0 && >&2 sed "s|^|[i] ${1:-}|g" || >&2 echo -e "[i] $*"; }
+pass () { >&2 echo "${green}[✔] $*${reset}"; }
+fail () { >&2 echo "${red}[✘] $*${reset}"; }
+yesno () {
+	info "$@"
+	>&2 read -r -p "[?] [yes/no]: " yn
+}
+
 # Sourced scripts, can use 'return'. In order to not exit the sourced script
 #   the 'return test' happens in a subshell
 (return 0 2>/dev/null) && sourced=1 || sourced=0
@@ -67,7 +79,7 @@ done="${cache_dir}/${install_name}.done"
 if [[ "${1:-}" == "--force" ]]; then
   shift
 elif [[ -f "${done}" ]]; then
-  echo ":: ${install_name}:${pid} skip"
+  fail "${install_name}:${pid} skip"
   exit 0
 fi
 
@@ -79,11 +91,11 @@ exec &> >(tee "${install_log}")
 
 function cleanup {
   if [ -n "${1:-}" ]; then
-    echo ":: ${install_name}:${pid} Aborted by ${1:-}"
+    fail "${install_name}:${pid} Aborted by ${1:-}"
   elif [ "${status}" -ne 0 ]; then
-    echo ":: ${install_name}:${pid} Failure (status $status)"
+    fail "${install_name}:${pid} Failure (status $status)"
   else
-    echo ":: ${install_name}:${pid} Success"
+    pass "${install_name}:${pid} Success"
     touch "${done}"
   fi
   popd > /dev/null
