@@ -43,7 +43,7 @@ alias git_merged_age=$'git_merged | xargs -I {} bash -c \'echo $(git show -s --f
 alias git_remote=$'git branch -r --no-color | awk \'{if ($1 ~ /^origin\//){ if ($1 !~ /(master|HEAD)/) print $1 }}\''
 alias git_no_tracking=$'git branch -r | awk \'{print $1}\' | egrep -v -f /dev/fd/0 <(git branch -vv | grep origin) | awk \'{print $1}\''
 
-alias ag="ag --hidden --ignore 'node_modules' --ignore '.git'"
+alias ag="ag --hidden --ignore 'node_modules' --ignore '.git' --skip-vcs-ignores"
 alias deps='jq "{"prod":.dependencies, "dev":.devDependencies}" package.json'
 
 alias recolor="source $HOME/.config/base16-shell/base16-default.dark.sh"
@@ -88,3 +88,4 @@ alias iambic-beta="docker run -it --rm -u $(id -u):$(id -g) \
 	-v /tmp/iambic:/output \
 	datfinesoul/iambic:test"
 alias assume='GRANTED_ALIAS_CONFIGURED="true" . assume'
+alias nocolor='TERM=dumb script --command /bin/bash -q /dev/null'

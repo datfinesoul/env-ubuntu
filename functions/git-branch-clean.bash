@@ -24,4 +24,5 @@ git-branch-clean-squashed () {
 	done
 
 	>&2 echo "git-branch-clean-squashed ${BRANCH} | xargs -I{} -n1 git branch -D {}"
+	>&2 echo "git fetch --all && git branch -vv | awk '/: gone]/{print \$1}' | xargs -r git branch -D"
 }
