@@ -21,7 +21,7 @@ if [ -f ~/.bashrc ]; then
 fi
 DOC
     echo "#:${FILE_NAME}:-"
-  } >> "${HOME}/.bashrc"
+  } >> "${HOME}/.bash_profile"
 fi
 
 for FILE in bashrc/*.bash; do

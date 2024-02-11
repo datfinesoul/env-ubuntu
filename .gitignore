@@ -1,2 +1,3 @@
 /installers/cache/**/*
 *.log
+*.swp

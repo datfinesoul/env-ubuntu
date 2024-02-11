@@ -7,4 +7,4 @@ curl -sS 'https://starship.rs/install.sh' -o /tmp/install.sh
 chmod 700 /tmp/install.sh
 /tmp/install.sh -b "${HOME}/.local/bin" --yes
 
-info "cd '${HOME}/env-ubuntu' && ./dotloader.bash bashrc"
+# info "cd '${HOME}/env-ubuntu' && ./dotloader.bash bashrc"
