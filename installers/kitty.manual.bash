@@ -4,7 +4,10 @@ source "$(dirname "${0}")/_core.bash"
 
 # https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html
 if [[ "${kernel_name}" == "Darwin" ]]; then
-	>&2 echo 'No Darwin Install'
+	curl -L https://sw.kovidgoyal.net/kitty/installer.sh \
+		| sh /dev/stdin launch=n
+	mkdir -p "${HOME}/.local/bin/"
+	ln -sf "/Applications/kitty.app" "${HOME}/.local/bin/"
 else
 	curl -L 'https://sw.kovidgoyal.net/kitty/installer.sh' | \
 		sh /dev/stdin launch=n
