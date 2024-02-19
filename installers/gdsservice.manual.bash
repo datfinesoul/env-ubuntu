@@ -6,14 +6,6 @@ source "$(dirname "${0}")/_core.bash"
 repo="glg/gdsservice"
 ### MODIFY: END
 
-kernel_name="$(uname -s)" # Darwin/Linux
-machine="$(uname -m)"
-if [[ "${machine}" == "x86_64" ]]; then
-  architecture="amd64"
-else
-  architecture="arm64"
-fi
-
 releases="$(gh api "/repos/${repo}/releases/latest")"
 
 # NOTE: sometimes you need ${kernel_name,,}

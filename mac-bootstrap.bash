@@ -18,7 +18,7 @@ hidutil property --set '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x70
 
 chsh -s /bin/bash
 touch ~/.bash_sessions_disable
-brew install coreutils gnu-sed
+brew install coreutils gnu-sed jq
 
 # this is supposed to fail to confirm a version of readlink is not in the path
 type -t readlink || true

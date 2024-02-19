@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# shellcheck disable=SC1090
-source "$(dirname "$(readlink -e -- "$0")")/core.source"
-
-curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.2/install.sh" | bash
-
