@@ -277,3 +277,23 @@ vnoremap <leader>dl :call DeleteBlankLines()<CR>:silent! noh<CR>
 nnoremap <leader>dl :g/^\s*$/d_<Bar>:silent! noh<CR>
 
 set listchars=eol:$,tab:>·,trail:~,extends:>,precedes:<,space:␣
+
+" Toggle settings on and off
+function! ToggleSettings()
+  if &number
+    set nolist
+    set nonumber
+    "set foldcolumn=0
+    set signcolumn=no
+  else
+    set list
+    set number
+    "set foldcolumn=2
+    set signcolumn=yes
+  endif
+endfunction
+
+" Map F7 to toggle settings
+nnoremap <F6> :call ToggleSettings()<CR>
+inoremap <F6> <Esc>:call ToggleSettings()<CR>a
+
