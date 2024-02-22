@@ -4,6 +4,10 @@
 	default = simple
 [pull]
 	rebase = false
+	ff = only
+[rebase]
+	# new to me, but seems useful
+	autostash = true
 [core]
 	autocrlf = input
 	whitespace = -trailing-space
@@ -14,8 +18,10 @@
 [diff]
 	renames = copies
 	renameLimit = 5000
+	context = 10
 [merge]
 	renameLimit = 5000
+	conflictStyle = zdiff3
 [alias]
 	bc = branch --contains
 	cb = checkout --no-track -b
@@ -85,12 +91,6 @@
 	format = html
 [web]
 	browser = gc
-[difftool "sourcetree"]
-	cmd = opendiff \"$LOCAL\" \"$REMOTE\"
-	path =
-[mergetool "sourcetree"]
-	cmd = /Applications/SourceTree.app/Contents/Resources/opendiff-w.sh \"$LOCAL\" \"$REMOTE\" -ancestor \"$BASE\" -merge \"$MERGED\"
-	trustExitCode = true
 [filter "lfs"]
 	clean = git-lfs clean %f
 	smudge = git-lfs smudge %f
@@ -101,6 +101,7 @@
 	signingkey = 4A4F755890424725
 [fetch]
 	prune = true
+	fsckobjects = true
 [status]
 	relativePaths = false
 [browser "gc"]
@@ -110,5 +111,30 @@
 [commit]
 	template = /home/datfinesoul/.gitmessage
 	gpgsign = true
+	verbose = true
 ;[url "https://git@"]
 ;  insteadOf = git://
+[rerere]
+	# https://git-scm.com/book/en/v2/Git-Tools-Rerere
+	enabled = true
+
+[core]
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true    # use n and N to move between diff sections
+	light = false      # set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
+	side-by-side = true
+;[merge]
+;    conflictstyle = diff3
+[diff]
+	colorMoved = default
+	algorithm = histogram
+;[includeIf "gitdir:~/code/<work>/"]
+;  path = "~/code/<work>/.gitconfig"
+
+[transfer]
+	fsckobjects = true
+[receive]
+	fsckObjects = true
