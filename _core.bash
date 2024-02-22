@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034,SC2312
 red="$(tput setaf 1)"
 green="$(tput setaf 2)"
 yellow="$(tput setaf 3)"
@@ -6,6 +7,7 @@ cyan="$(tput setaf 6)"
 white="$(tput setaf 7)"
 reset="$(tput sgr0)"
 plain () { test ! -t 0 && >&2 cat || >&2 echo -e "$*"; }
+# shellcheck disable=SC2310
 info () { test ! -t 0 && >&2 sed "s|^|[i] ${1:-}|g" || >&2 echo -e "[i] $*"; }
 pass () { >&2 echo "${green}[✔] $*${reset}"; }
 fail () { >&2 echo "${red}[✘] $*${reset}"; }
@@ -32,9 +34,6 @@ else
   architecture="arm64"
 fi
 
-info "$(content kernel_name)"
-info "$(content machine)"
-info "$(content architecture)"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   function readlink {
@@ -51,13 +50,21 @@ fi
 script_path="$(readlink -e -- "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")"
 script_name="$(basename "${script_path}")"
 script_dir="$(dirname "${script_path}")"
-info "$(content script_path)"
-info "$(content script_name)"
-info "$(content script_dir)"
+
+if [[ -n "${DEBUG_ENV}" ]]; then
+  info "$(content kernel_name)"
+  info "$(content machine)"
+  info "$(content architecture)"
+  info "$(content script_path)"
+  info "$(content script_name)"
+  info "$(content script_dir)"
+fi
 
 set -o errexit
 set -o nounset
 set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit # bash 4.4+
 IFS=$'\n\t'
 
 if [[ "$(id -u)" -eq "0" ]]; then

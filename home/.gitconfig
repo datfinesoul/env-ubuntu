@@ -6,7 +6,7 @@
 	rebase = false
 	ff = only
 [rebase]
-	# new to me, but seems useful
+	;new to me, but seems useful
 	autostash = true
 [core]
 	autocrlf = input
@@ -29,11 +29,14 @@
 	cob = "!bash -c 'git checkout $(git branch -a | awk '\"'\"'{FS=\"[/]\";} {gsub(/remotes\\/[^\\/]+\\//, \"\"); gsub(/[\t *]/, \"\"); if ($0 !~ /HEAD/) {print $1;} }'\"'\"' | sort -ui | percol --match-method regex)'"
 	cmp = "!sh -c 'git log --left-right --oneline --no-merges --pretty=format:\"%m %Cred%h%Creset - %s %Cgreen(%an - %cr)%Creset %C(yellow)%d%Creset\" $0...'"
 	crs = clone --recurse-submodules
-	d = diff --ignore-space-at-eol --ignore-space-change
-	dc = diff --cached --ignore-space-at-eol --ignore-space-change
-	ds = diff --stat
-	dcs = diff --cached --stat
-	dn = diff --name-status
+	;d = diff --ignore-space-at-eol --ignore-space-change
+	d = diff
+	;dc = diff --cached --ignore-space-at-eol --ignore-space-change
+	dc = diff --cached
+	ds = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff'"
+	dsc = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached'"
+	dnc = diff --cached --stat
+	dn = diff --stat
 	f=log --oneline --merges --pretty=format:'%Cred%h%Creset - %C(white)%s %Cgreen(%cr)%C(blue) [%cn]%C(yellow)%d%Creset' --abbrev-commit
 	fa = fetch --all --tags
 	lb = checkout -
@@ -118,19 +121,6 @@
 	# https://git-scm.com/book/en/v2/Git-Tools-Rerere
 	enabled = true
 
-[core]
-	pager = delta
-[interactive]
-	diffFilter = delta --color-only
-[delta]
-	navigate = true    # use n and N to move between diff sections
-	light = false      # set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
-	side-by-side = true
-;[merge]
-;    conflictstyle = diff3
-[diff]
-	colorMoved = default
-	algorithm = histogram
 ;[includeIf "gitdir:~/code/<work>/"]
 ;  path = "~/code/<work>/.gitconfig"
 
@@ -138,3 +128,30 @@
 	fsckobjects = true
 [receive]
 	fsckObjects = true
+[diff]
+	colorMoved = default
+	algorithm = histogram
+[core]
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true    ; use n and N to move between diff sections
+	light = false      ; set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
+	;side-by-side = true
+	features = unobtrusive-line-numbers decorations
+	;whitespace-error-style = 22 reverse
+[delta "unobtrusive-line-numbers"]
+	line-numbers = true
+	;line-numbers-minus-style = "#444444"
+	line-numbers-zero-style = "#444444"
+	;line-numbers-plus-style = "#444444"
+	line-numbers-left-format = "{nm:>4}┊"
+	line-numbers-right-format = "{np:>4}│"
+	line-numbers-left-style = blue
+	line-numbers-right-style = blue
+[delta "decorations"]
+	;commit-decoration-style = bold yellow box ul
+	;file-style = bold yellow ul
+	file-decoration-style = none
+	;hunk-header-decoration-style = yellow box

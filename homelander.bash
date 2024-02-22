@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091
+# shellcheck source=./_core.bash
 . "$(dirname "${0}")/_core.bash"
 dotfile="${1}"
 target="${2:-${HOME}}/${dotfile}"
@@ -17,7 +17,7 @@ for file in "${script_dir}/homelander/${dotfile}"/*.bash; do
   {
     echo "#+:${label}:"
     # remove blank lines and comments
-    cat "${file}" | sed -e '/^$/d' -e '/^\s*#/d'
+    sed -e '/^$/d' -e '/^\s*#/d' "${file}"
     echo "#-:${label}:"
   } >> "${target}"
 done
