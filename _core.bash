@@ -9,6 +9,8 @@ plain () { test ! -t 0 && >&2 cat || >&2 echo -e "$*"; }
 info () { test ! -t 0 && >&2 sed "s|^|[i] ${1:-}|g" || >&2 echo -e "[i] $*"; }
 pass () { >&2 echo "${green}[✔] $*${reset}"; }
 fail () { >&2 echo "${red}[✘] $*${reset}"; }
+content () { local name="${1}"; printf '%-13s: %s' "${name}" "${!name}"; }
+#content () { local name="${1}"; printf '%*s : %s' 12 "${name}" "${!name}"; }
 yesno () {
 	info "$@"
 	>&2 read -r -p "[?] [yes/no]: " yn
@@ -30,9 +32,9 @@ else
   architecture="arm64"
 fi
 
-info "KN:${kernel_name}"
-info "M:${machine}"
-info "A:${architecture}"
+info "$(content kernel_name)"
+info "$(content machine)"
+info "$(content architecture)"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   function readlink {
@@ -49,9 +51,9 @@ fi
 script_path="$(readlink -e -- "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")"
 script_name="$(basename "${script_path}")"
 script_dir="$(dirname "${script_path}")"
-info "SP:${script_path}"
-info "SN:${script_name}"
-info "SD:${script_dir}"
+info "$(content script_path)"
+info "$(content script_name)"
+info "$(content script_dir)"
 
 set -o errexit
 set -o nounset

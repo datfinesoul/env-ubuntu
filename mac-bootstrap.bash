@@ -7,8 +7,6 @@ IFS=$'\n\t'
 # # type git
 # #   that installs development tools
 # # then clone
-# 
-# 
 # /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # remap caps lock to esc
@@ -38,8 +36,10 @@ if [[ "$(id -u)" -eq "0" ]]; then
   exit 1
 fi
 
-# TODO: this whole thing should be replaced by dotloader
-./bashrc-apply.bash
+if [[ "${kernel_name}" == 'Darwin' ]]; then
+  "${script_dir}/homelander.bash" .bash_profile
+fi
+"${script_dir}/homelander.bash" .bashrc
 
 function cleanup {
   ls /tmp/*.log
