@@ -51,7 +51,7 @@ script_path="$(readlink -e -- "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}")"
 script_name="$(basename "${script_path}")"
 script_dir="$(dirname "${script_path}")"
 
-if [[ -n "${DEBUG_ENV}" ]]; then
+if [[ -n "${DEBUG_ENV:-}" ]]; then
   info "$(content kernel_name)"
   info "$(content machine)"
   info "$(content architecture)"
@@ -64,7 +64,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
-shopt -s inherit_errexit # bash 4.4+
+# shopt -s inherit_errexit # bash 4.4+
 IFS=$'\n\t'
 
 if [[ "$(id -u)" -eq "0" ]]; then
