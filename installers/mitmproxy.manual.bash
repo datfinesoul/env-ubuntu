@@ -15,7 +15,7 @@ if [[ -z "${VERSION}" ]]; then
 fi
 VERSION="${VERSION#*v}"
 
-ZIP_FILE="mitmproxy-${VERSION}-linux.tar.gz"
+ZIP_FILE="mitmproxy-${VERSION}-linux-${machine}.tar.gz"
 URL="https://downloads.mitmproxy.org/${VERSION}/${ZIP_FILE}"
 
 TARGET_DIR="${HOME}/.local/${TOOLSET}/${VERSION}"

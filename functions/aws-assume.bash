@@ -8,7 +8,7 @@ aws-assume() {
   #    AWS_CREDENTIALS_EXPIRATION
   #fi
 
-  local role payload
+  local role duration payload
   role="${1}"
   duration="${2:-3600}"
   payload="$(aws sts assume-role \
