@@ -1,4 +1,5 @@
-aws-assume() {
+alias aws-assume=aws_assume
+aws_assume() {
   # if a profile was set, remove all the other creds
   #if [[ -n "${AWS_PROFILE}" && -z "${AWS_SESSION_EXPIRATION}" ]]; then
   #  unset \

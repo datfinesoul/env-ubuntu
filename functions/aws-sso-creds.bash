@@ -1,4 +1,5 @@
-aws-sso-creds() {
+alias aws-sso-creds=aws_sso_creds
+aws_sso_creds() {
   unset \
     AWS_ACCESS_KEY_ID \
     AWS_SECRET_ACCESS_KEY \

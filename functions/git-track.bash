@@ -1,4 +1,5 @@
-git-track () {
+alias git-track=git_track
+git_track () {
 	local BRANCH
 	BRANCH="$(git branch --show-current)"
 

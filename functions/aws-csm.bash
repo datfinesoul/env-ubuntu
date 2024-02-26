@@ -1,4 +1,5 @@
-aws-csm () {
+alias aws-csm=aws_csm
+aws_csm () {
 AWS_CSM_ENABLED='true'
 AWS_CSM_PORT='31000'
 AWS_CSM_HOST='127.0.0.1'

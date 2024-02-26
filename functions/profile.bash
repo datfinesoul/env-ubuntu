@@ -1,5 +1,3 @@
-# vi: noet :
-# noet because we need tabs for the heredoc
 profile () {
 	unset -v MY_PROFILE BW_SESSION
 	local PROFILE_NAME="${1}"

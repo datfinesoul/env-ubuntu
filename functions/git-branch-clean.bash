@@ -1,4 +1,7 @@
-git-branch-clean () {
+alias git-branch-clean=git_branch_clean
+alias git-branch-clean-squashed=git_branch_clean_squashed
+
+git_branch_clean () {
 	local BRANCH
 	BRANCH="${1}"
 
@@ -11,7 +14,7 @@ git-branch-clean () {
 	fi
 }
 
-git-branch-clean-squashed () {
+git_branch_clean_squashed () {
 	local BRANCH
 	BRANCH="${1:-main}"
 
