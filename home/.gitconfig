@@ -152,6 +152,6 @@
 	line-numbers-right-style = blue
 [delta "decorations"]
 	;commit-decoration-style = bold yellow box ul
-	;file-style = bold yellow ul
-	file-decoration-style = none
-	;hunk-header-decoration-style = yellow box
+	file-style = white
+	file-decoration-style = ul ol brightcyan
+	hunk-header-decoration-style = grey box
