@@ -6,7 +6,6 @@ source "$(dirname "${0}")/_core.bash"
 repo="caddyserver/caddy"
 ### MODIFY: END
 
-echo curl -s "https://api.github.com/repos/${repo}/releases/latest"
 releases="$(curl -s "https://api.github.com/repos/${repo}/releases/latest")"
 
 # NOTE: sometimes you need ${kernel_name,,}
