@@ -14,4 +14,6 @@ else
   wget "https://mirrors.edge.kernel.org/pub/software/scm/git/git-htmldocs-${VERSION}.tar.gz"
   sudo mkdir -p "${GIT_HTML}"
   sudo tar xzf "git-htmldocs-${VERSION}.tar.gz" --directory "${GIT_HTML}"
+
+  curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
 fi
