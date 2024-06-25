@@ -15,14 +15,17 @@ if [[ -z "${VERSION}" ]]; then
 fi
 VERSION="${VERSION#*v}"
 
-ZIP_FILE="granted_${VERSION}_${kernel_name,,}_${machine}.tar.gz"
+# OSX lowercase
+kernel_name="$(echo "${kernel_name}" | tr '[:upper:]' '[:lower:]')"
+ZIP_FILE="granted_${VERSION}_${kernel_name}_${machine}.tar.gz"
 URL="https://releases.commonfate.io/granted/v${VERSION}/${ZIP_FILE}"
 
 TARGET_DIR="${HOME}/.local/${TOOLSET}/${VERSION}"
 BIN_DIR="${HOME}/.local/bin"
 
-if [[ "${kernel_name}" == "Darwin" ]]; then
-  false
+if [[ "${kernel_name}" == "darwin" ]]; then
+	brew tap common-fate/granted
+	brew install granted
 else
   mkdir -p "${TARGET_DIR}"
   mkdir -p "${BIN_DIR}"
@@ -30,9 +33,9 @@ else
   curl -OL "${URL}"
   tar -zxvf "./${ZIP_FILE}"
   mv assume "${TARGET_DIR}/assume"
-  mv assumego "${TARGET_DIR}/assumego"
+  [[ -f "assumego" ]] && mv assumego "${TARGET_DIR}/assumego"
   mv granted "${TARGET_DIR}/granted"
-  ln --symbolic --force "${TARGET_DIR}/assume" "${BIN_DIR}/assume"
-  ln --symbolic --force "${TARGET_DIR}/assumego" "${BIN_DIR}/assumego"
-  ln --symbolic --force "${TARGET_DIR}/granted" "${BIN_DIR}/granted"
+  ln -sf "${TARGET_DIR}/assume" "${BIN_DIR}/assume"
+  [[ -f "${TARGET_DIR}/assumego" ]] && ln -sf "${TARGET_DIR}/assumego" "${BIN_DIR}/assumego"
+  ln -sf "${TARGET_DIR}/granted" "${BIN_DIR}/granted"
 fi

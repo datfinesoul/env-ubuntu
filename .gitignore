@@ -1,3 +1,4 @@
 /installers/cache/**/*
 *.log
 *.swp
+/homelander/_home/.config/coc/
