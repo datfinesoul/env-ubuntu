@@ -5,21 +5,6 @@ set -o pipefail
 set -o errtrace
 IFS=$'\n\t'
 
-# # type git
-# #   that installs development tools
-# # then clone
-# /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# remap caps lock to esc
-# the below option might be the linux version
-#setxkbmap -option caps:escape
-hidutil property --set '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x700000039,"HIDKeyboardModifierMappingDst":0x700000029}]}'
-
-chsh -s /bin/bash
-sudo chsh -s /bin/bash
-touch ~/.bash_sessions_disable
-brew install coreutils gnu-sed jq
-
 # shellcheck disable=SC1091
 source "$(dirname "${0}")/_core.bash"
 

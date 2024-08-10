@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/_core.bash"
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  curl -L -o opa "https://openpolicyagent.org/downloads/v0.67.0/opa_darwin_amd64"
+  false
+else
+  curl -L -o opa "https://openpolicyagent.org/downloads/v0.67.0/opa_linux_amd64_static"
+  chmod 700 opa
+  mv opa "${HOME}/.local/bin/opa"
+fi
+
+# vim: set ft=bash :

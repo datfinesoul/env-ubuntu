@@ -21,7 +21,7 @@
 	context = 10
 [merge]
 	renameLimit = 5000
-	conflictStyle = zdiff3
+	conflictStyle = diff3
 [alias]
 	bc = branch --contains
 	cb = checkout --no-track -b
@@ -112,7 +112,7 @@
 [browser "ff"]
 	cmd = open -a Firefox.app
 [commit]
-	template = /Users/philiphadviger/.gitmessage
+	template = /home/philip.hadviger/.gitmessage
 	gpgsign = true
 	verbose = true
 ;[url "https://git@"]
