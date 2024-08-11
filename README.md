@@ -1,54 +1,43 @@
-# env-ubuntu
+## Overview
 
-## Setup
+A collections of things to get my terminal up and running in a fairly consistent state
 
-### EC2 User Data
+## Install
 
-```bash
-#!/bin/bash
-wget 'https://github.com/datfinesoul/env-ubuntu/archive/refs/heads/main.zip'
-git clone https://github.com/datfinesoul/env-ubuntu.git /home/ubuntu/env-ubuntu
-chown -R ubuntu:ubuntu /home/ubuntu/env-ubuntu
-sudo -Hu ubuntu bash -c "cd && cd env-ubuntu && ./bootstrap.bash"
-```
-
-### Installing Manually
+### Core
 
 ```bash
-# curl 'github static link here' | bash -c
+git clone https://github.com/datfinesoul/env-ubuntu.git
+cd env-ubuntu
+./bootstrap.new.bash
 ```
 
-## Commands
+## `gh` CLI
 
-- `profile <name>`
+```bash
+gh auth login
+```
 
-  sets the **MY_PROFILE** and **BW_SESSION** environment variables (logs the user into bitwarden)
+When asked to enter a "Title for your SSH key", please add something meaningful after the default of `GitHub CLI`
 
-- `get-profile-ssh-keys.bash`
+```
+? What account do you want to log into? GitHub.com
+? What is your preferred protocol for Git operations on this host? SSH
+? Generate a new SSH key to add to your GitHub account? Yes
+? Enter a passphrase for your new SSH key (Optional):
+? Title for your SSH key: GitHub CLI
+? How would you like to authenticate GitHub CLI? Login with a web browser
 
-  pulls down the ssh keys tied to **MY_PROFILE** ([read more](./bin/get-profile-ssh.md))
-
-- `save-profile-ssh-key.bash PROFILE_NAME KEY_NAME ...`
-
-  - **KEY_NAME** is required, and used as a base pattern.
-
-    ```bash
-    # eg.
-    save-profile-ssh-key.bash personal id_rsa
-    # this saves the following files to the "personal" profile
-    # - id_rsa
-    # - id_rsa.pub
-    ```
-
-## Notes
-
-- For some reason apt commands can sometimes just get stuck.  Here are some workarounds.
-  - ipv4 preference
-    - `sudo vim /etc/gai.conf`
-    - uncomment the `# precedence ::ffff:0:0/96  100` line
-  - local mirror issue
-    - `sudo vim /etc/apt/sources.list`
-    - change all the `jp.archive...` references to `archive...`
-- EC2 instance initalization logs
-  - `→ aws ec2 --output text get-console-output --instance-id i-00000000000000000 --latest`
-- [Run super-linter locally](https://github.com/github/super-linter/blob/master/docs/run-linter-locally.md)
+! First copy your one-time code: 46C9-00D4
+Press Enter to open github.com in your browser...
+Gtk-Message: 14:07:47.290: Failed to load module "canberra-gtk-module"
+Gtk-Message: 14:07:47.291: Failed to load module "canberra-gtk-module"
+[0806/140747.336375:WARNING:chrome_main_linux.cc(80)] Read channel stable from /app/extra/CHROME_VERSION_EXTRA
+[0806/140747.469930:WARNING:chrome_main_linux.cc(80)] Read channel stable from /app/extra/CHROME_VERSION_EXTRA
+Opening in existing browser session.
+✓ Authentication complete.
+- gh config set -h github.com git_protocol ssh
+✓ Configured git protocol
+✓ Uploaded the SSH key to your GitHub account: /home/philip.hadviger/.ssh/id_ed25519.pub
+✓ Logged in as datfinesoul
+```
