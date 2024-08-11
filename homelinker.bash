@@ -25,7 +25,9 @@ mkdir -p "$link_source"
 			continue
 		fi
 
-		ln -sf "$link_target" "$link_source"
+set -x
+		ln -snf "$link_target" "$link_source"
+set +x
 	done
 else
 		link_source="$HOME/${file#*./}"
@@ -35,7 +37,9 @@ else
 	       	continue
 	fi
 
-	ln -sf "$link_target" "$link_source"
+set -x
+	ln -snf "$link_target" "$link_source"
+set +x
 fi
 done
 
