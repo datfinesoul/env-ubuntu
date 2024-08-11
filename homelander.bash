@@ -28,6 +28,9 @@ if [[ -z "${target}" ]]; then
 	__usage
 fi
 
+if [[ "${clean:-}" == "true" ]]; then
+	sed -i '/^#[+]:[^:]\+:$/,/^#[-]:[^:]\+:$/d' "$target"
+fi
 find "${plugin_dir}" -type f -name "*.bash" -print0 \
 	| sort -z \
 	| while IFS= read -r -d '' file; do
@@ -37,10 +40,6 @@ find "${plugin_dir}" -type f -name "*.bash" -print0 \
 	label="$(basename "${file%.bash*}")"
 	# remove section ( eg. #[+-]:somefile: )
 	touch "${target}"
-	sed -i '/#[+]:'"${label}"':/,/#[-]:'"${label}"':/d' "${target}"
-	if [[ "${clean:-}" == "true" ]]; then
-		continue
-	fi
 	# add the section back
 	{
 		echo "#+:${label}:"

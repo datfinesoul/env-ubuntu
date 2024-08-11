@@ -1,4 +1,4 @@
-for FILE in "${HOME}"/env-ubuntu/functions/*.bash; do
+for FILE in "${ENV_UBUNTU_ROOT}"/functions/*.bash; do
   if [[ -f "${FILE}" ]]; then
     # shellcheck disable=SC1090
     source "${FILE}"

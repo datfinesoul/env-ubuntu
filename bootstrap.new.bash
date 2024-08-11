@@ -21,6 +21,8 @@ if [[ "$(id -u)" -eq "0" ]]; then
   exit 1
 fi
 
+echo "export ENV_UBUNTU_ROOT='$script_dir'" \
+	> "$script_dir/homelander/.bashrc/0-env-ubuntu-root.bash"
 if [[ "${kernel_name}" == 'Darwin' ]]; then
   "${script_dir}/homelander.bash" .bash_profile
 fi

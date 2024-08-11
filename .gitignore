@@ -2,3 +2,4 @@
 *.log
 *.swp
 /homelander/_home/.config/coc/
+/homelander/.bashrc/0-*
