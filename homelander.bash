@@ -29,7 +29,7 @@ if [[ -z "${target}" ]]; then
 fi
 
 find "${plugin_dir}" -type f -name "*.bash" -print0 \
-	| sort \
+	| sort -z \
 	| while IFS= read -r -d '' file; do
 	# skip if there are no files
 	[[ -f "${file}" ]] || continue
