@@ -18,3 +18,5 @@ tree
 moreutils
 build-essential
 git-lfs
+vim
+bat
