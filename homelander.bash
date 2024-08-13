@@ -28,6 +28,7 @@ if [[ -z "${target}" ]]; then
 	__usage
 fi
 
+info "homelander starting"
 if [[ "${clean:-}" == "true" ]]; then
 	sed -i '/^#[+]:[^:]\+:$/,/^#[-]:[^:]\+:$/d' "$target"
 fi
@@ -48,3 +49,4 @@ find "${plugin_dir}" -type f -name "*.bash" -print0 \
 		echo "#-:${label}:"
 	} >> "${target}"
 done
+info "homelander finished"

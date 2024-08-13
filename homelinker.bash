@@ -3,7 +3,7 @@
 . "$(dirname "${0}")/_core.bash"
 
 plugin_dir="${script_dir}/homelander/_home"
-pushd "$plugin_dir"
+pushd "$plugin_dir" > /dev/null
 find "." -maxdepth 1 -mindepth 1 -print0 \
 	| while IFS= read -r -d '' file; do
 	# skip if empty
@@ -25,9 +25,7 @@ mkdir -p "$link_source"
 			continue
 		fi
 
-set -x
 		ln -snf "$link_target" "$link_source"
-set +x
 	done
 else
 		link_source="$HOME/${file#*./}"
@@ -37,9 +35,7 @@ else
 	       	continue
 	fi
 
-set -x
 	ln -snf "$link_target" "$link_source"
-set +x
 fi
 done
 
