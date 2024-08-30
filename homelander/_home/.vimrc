@@ -330,4 +330,4 @@ augroup EditorConfigAutoload
 augroup END
 
 set modeline
-set modeline=5
+set modelines=5
