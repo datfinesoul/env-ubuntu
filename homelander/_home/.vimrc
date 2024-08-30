@@ -297,3 +297,37 @@ endfunction
 nnoremap <F6> :call ToggleSettings()<CR>
 inoremap <F6> <Esc>:call ToggleSettings()<CR>a
 
+augroup js_linting
+  autocmd!
+  autocmd BufWritePost *.js,*.mjs call RunStandardFix()
+augroup END
+
+function! RunStandardFix()
+  " Try to find the local standard executable
+  let l:local_standard = findfile('node_modules/.bin/standard', '.;')
+
+  " If the local standard executable is not found, do nothing
+  if empty(l:local_standard)
+    return
+  endif
+
+  " Construct the command string to run
+  let l:cmd = l:local_standard . ' --fix --env jest ' . shellescape(expand('%:p'))
+
+  " Run the command and capture the output
+  let l:output = system(l:cmd)
+
+  " Optionally, you can display the output
+  " echom l:output
+
+  " Reload the file to reflect changes made by standard --fix
+  edit!
+endfunction
+
+augroup EditorConfigAutoload
+  autocmd!
+  autocmd FileType,BufEnter,VimEnter * call timer_start(100, { -> execute('silent! EditorConfigReload') })
+augroup END
+
+set modeline
+set modeline=5
