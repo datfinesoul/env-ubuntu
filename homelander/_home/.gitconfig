@@ -112,7 +112,8 @@
 [browser "ff"]
 	cmd = open -a Firefox.app
 [commit]
-	template = /home/datfinesoul/.gitmessage
+	# relative to git repo root
+	template = ../../../.gitmessage
 	gpgsign = true
 	verbose = true
 ;[url "https://git@"]
