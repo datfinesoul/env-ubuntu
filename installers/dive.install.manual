@@ -1,9 +1,0 @@
-#!/usr/bin/env /usr/local/bin/env-ubuntu-core
-# NOTE: OSX requires shebang to be binary file not script, this is the workaround
-# shellcheck disable=SC1090
-. "${SCRIPT_DIR}/core.source"
-
-# https://github.com/wagoodman/dive
-export VERSION="0.10.0"
-wget "https://github.com/wagoodman/dive/releases/download/v${VERSION}/dive_${VERSION}_linux_amd64.deb"
-sudo apt install "./dive_${VERSION}_linux_amd64.deb"

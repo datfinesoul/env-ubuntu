@@ -1,5 +1,4 @@
-# vi: noet :
-# noet because we need tabs for the heredoc
+alias bw-env=bw_env
 bw_env () {
 local STATUS FOLDER_ID LINE
 
@@ -87,9 +86,9 @@ DOC
 while IFS=$'\n\t' read -r LINE; do
 	echo "${LINE%%=*}"
 	export "${LINE}"
-done < <( \
+done <<< "$( \
 	bw list items \
 	--folderid "${FOLDER_ID}" \
 	| jq -rM --from-file <(echo "${QUERY}")
-)
+)"
 }

@@ -1,4 +1,5 @@
-iamlive-nointernet () {
+alias iamlive-nointernet=iamlive_nointernet
+iamlive_nointernet () {
 if [[ "${1:-}" == "--proxy" ]]; then
 	shift
 	#sudo -g no-internet "$(which iamlive)" --set-ini --profile "${AWS_PROFILE}" --mode proxy --output-file ./iam.json

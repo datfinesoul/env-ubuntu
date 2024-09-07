@@ -1,4 +1,5 @@
-aws-delete-secret-permanently () {
+alias aws-delete-secret-permanently=aws_delete_secret_permanently
+aws_delete_secret_permanently () {
 local REGION NAME
 REGION="${1}"
 NAME="${2}"

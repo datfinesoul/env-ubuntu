@@ -1,4 +1,5 @@
-git-check-access () {
+alias git-check-access=git_check_access
+git_check_access () {
 	REPO="${1}"
 	GIT_SSH_COMMAND="ssh -o PasswordAuthentication=no -o StrictHostKeyChecking=no " \
 		git ls-remote "git@github.com:${REPO}.git" &> /dev/null \

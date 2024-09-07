@@ -1,9 +1,0 @@
-#!/usr/bin/env /home/phadviger/env-ubuntu/env-ubuntu-core
-# NOTE: OSX requires shebang to be binary file not script, this is the workaround
-# shellcheck disable=SC1090
-. "${SCRIPT_DIR}/core.source"
-
-git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
-~/.fzf/install
-
-# vim: set ft=bash :

@@ -4,6 +4,10 @@
 	default = simple
 [pull]
 	rebase = false
+	ff = only
+[rebase]
+	;new to me, but seems useful
+	autostash = true
 [core]
 	autocrlf = input
 	whitespace = -trailing-space
@@ -14,8 +18,10 @@
 [diff]
 	renames = copies
 	renameLimit = 5000
+	context = 10
 [merge]
 	renameLimit = 5000
+	conflictStyle = zdiff3
 [alias]
 	bc = branch --contains
 	cb = checkout --no-track -b
@@ -23,11 +29,14 @@
 	cob = "!bash -c 'git checkout $(git branch -a | awk '\"'\"'{FS=\"[/]\";} {gsub(/remotes\\/[^\\/]+\\//, \"\"); gsub(/[\t *]/, \"\"); if ($0 !~ /HEAD/) {print $1;} }'\"'\"' | sort -ui | percol --match-method regex)'"
 	cmp = "!sh -c 'git log --left-right --oneline --no-merges --pretty=format:\"%m %Cred%h%Creset - %s %Cgreen(%an - %cr)%Creset %C(yellow)%d%Creset\" $0...'"
 	crs = clone --recurse-submodules
-	d = diff --ignore-space-at-eol --ignore-space-change
-	dc = diff --cached --ignore-space-at-eol --ignore-space-change
-	ds = diff --stat
-	dcs = diff --cached --stat
-	dn = diff --name-status
+	;d = diff --ignore-space-at-eol --ignore-space-change
+	d = diff
+	;dc = diff --cached --ignore-space-at-eol --ignore-space-change
+	dc = diff --cached
+	ds = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff'"
+	dsc = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached'"
+	dnc = diff --cached --stat
+	dn = diff --stat
 	f=log --oneline --merges --pretty=format:'%Cred%h%Creset - %C(white)%s %Cgreen(%cr)%C(blue) [%cn]%C(yellow)%d%Creset' --abbrev-commit
 	fa = fetch --all --tags
 	lb = checkout -
@@ -59,6 +68,7 @@
 	rebase-preserve = rebase --committer-date-is-author-date
 	own = "!git lg --name-only --author=\"$(git config user.name)\""
 	sl = shortlog --summary --numbered --email --all
+	# git de origin/master package-lock.json docs
 	de = "!sh -c 'branch=\"$1\"; shift; paths=(); for arg do paths+=(\":(exclude)$arg\"); done; git diff \"$branch\" -- . \"${paths[@]}\"' -"
 	empty = commit -m trigger-checks --allow-empty
 
@@ -84,12 +94,6 @@
 	format = html
 [web]
 	browser = gc
-[difftool "sourcetree"]
-	cmd = opendiff \"$LOCAL\" \"$REMOTE\"
-	path =
-[mergetool "sourcetree"]
-	cmd = /Applications/SourceTree.app/Contents/Resources/opendiff-w.sh \"$LOCAL\" \"$REMOTE\" -ancestor \"$BASE\" -merge \"$MERGED\"
-	trustExitCode = true
 [filter "lfs"]
 	clean = git-lfs clean %f
 	smudge = git-lfs smudge %f
@@ -100,6 +104,7 @@
 	signingkey = 4A4F755890424725
 [fetch]
 	prune = true
+	fsckobjects = true
 [status]
 	relativePaths = false
 [browser "gc"]
@@ -109,5 +114,44 @@
 [commit]
 	template = /home/datfinesoul/.gitmessage
 	gpgsign = true
+	verbose = true
 ;[url "https://git@"]
 ;  insteadOf = git://
+[rerere]
+	# https://git-scm.com/book/en/v2/Git-Tools-Rerere
+	enabled = true
+
+;[includeIf "gitdir:~/code/<work>/"]
+;  path = "~/code/<work>/.gitconfig"
+
+[transfer]
+	fsckobjects = true
+[receive]
+	fsckObjects = true
+[diff]
+	colorMoved = default
+	algorithm = histogram
+[core]
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	navigate = true    ; use n and N to move between diff sections
+	light = false      ; set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
+	;side-by-side = true
+	features = unobtrusive-line-numbers decorations
+	;whitespace-error-style = 22 reverse
+[delta "unobtrusive-line-numbers"]
+	line-numbers = true
+	;line-numbers-minus-style = "#444444"
+	line-numbers-zero-style = "#444444"
+	;line-numbers-plus-style = "#444444"
+	line-numbers-left-format = "{nm:>4}┊"
+	line-numbers-right-format = "{np:>4}│"
+	line-numbers-left-style = blue
+	line-numbers-right-style = blue
+[delta "decorations"]
+	;commit-decoration-style = bold yellow box ul
+	file-style = white
+	file-decoration-style = ul ol brightcyan
+	hunk-header-decoration-style = grey box
