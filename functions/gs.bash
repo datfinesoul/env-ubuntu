@@ -1,4 +1,4 @@
-_gs (){
+gs (){
 	local tld="$(git rev-parse --show-toplevel 2> /dev/null)" || tld=''
 	local command="${1}"
 	if [[ -z "${tld}" ]]; then
@@ -17,7 +17,7 @@ _gs (){
 		if [[ -e "${gs_path}" ]]; then
 			# if a _gs command was passed in $1 execute it
 			if [[ -n "${command}" && -e "${gs_path}/${command}" ]]; then
-				"${tld}/_dev/_gs/${command}" "$@"
+				"${gs_path}/${command}" "$@"
 				return
 			fi
 			# otherwise add the commands in this dir to a collection
@@ -30,21 +30,4 @@ _gs (){
 		# print the collection
 		echo -e "$gs_commands" | sort | >&2 uniq
 	fi
-}
-gs (){
-	local tld="$(git rev-parse --show-toplevel 2> /dev/null)" || tld=''
-	local command="${1}"
-	if [[ -z "${tld}" ]]; then
-		return
-	fi
-	if [[ ! -e "${tld}/_dev/gs-targets" ]]; then
-		>&2 echo ":: missing dir ${tld}/_dev/gs-targets"
-		return
-	fi
-	if [[ -z "${command}" || ! -e "${tld}/_dev/gs-targets/${command}" ]]; then
-		>&2 find "${tld}"/_dev/gs-targets -type l -printf '%f\n'
-		return
-	fi
-	shift
-	"${tld}/_dev/gs-targets/${command}" "$@"
 }
