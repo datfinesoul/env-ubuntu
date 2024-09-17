@@ -38,6 +38,18 @@ if [[ "${sourced}" -eq 0 ]]; then
 	exit 1
 fi
 
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  function readlink {
+    greadlink "$@"
+  }
+  export -f readlink
+
+  function sed {
+    gsed "$@"
+  }
+  export -f sed
+fi
+
 kernel_name="$(uname -s)" # Darwin/Linux
 machine="$(uname -m)"
 if [[ "${machine}" == "x86_64" ]]; then
