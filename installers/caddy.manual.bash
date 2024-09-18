@@ -9,14 +9,25 @@ repo="caddyserver/caddy"
 releases="$(curl -s "https://api.github.com/repos/${repo}/releases/latest")"
 
 # NOTE: sometimes you need ${kernel_name,,}
-read -r version url <<< "$(
-  printf "%s\n" "${releases}" \
-  | jq \
-  --arg k "${kernel_name,,}" \
-  --arg a "${architecture}" \
-  --arg m "${machine}" \
-  -r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$a+".tar.gz$")))] | @tsv'
-)"
+if [[ "$kernel_name" == 'Darwin' ]]; then
+	read -r version url <<< "$(
+		printf "%s\n" "${releases}" \
+		| jq \
+		--arg k "mac" \
+		--arg a "${architecture}" \
+		--arg m "${machine}" \
+		-r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$a+".tar.gz$")))] | @tsv'
+	)"
+else
+	read -r version url <<< "$(
+		printf "%s\n" "${releases}" \
+		| jq \
+		--arg k "${kernel_name,,}" \
+		--arg a "${architecture}" \
+		--arg m "${machine}" \
+		-r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$a+".tar.gz$")))] | @tsv'
+	)"
+fi
 
 info "V:${version}"
 info "U:${url}"

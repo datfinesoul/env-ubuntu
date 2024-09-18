@@ -40,3 +40,5 @@ echo '{
 		"^$\UF729" = moveToBeginningOfDocumentAndModifySelection:; // ctrl-shift-home
 		"^$\UF72B" = moveToEndOfDocumentAndModifySelection:; // ctrl-shift-end
 }' > "${HOME}/Library/KeyBindings/DefaultKeyBindings.dict"
+
+sudo softwareupdate --install-rosetta --agree-to-license
