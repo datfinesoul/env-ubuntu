@@ -20,22 +20,12 @@ if [[ -h /usr/local/bin/tf ]]; then
 fi
 
 if [[ ! -f "${TF_EXE}" ]]; then
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    wget \
-      --quiet \
-      "$(printf '%s' \
-      "https://releases.hashicorp.com/terraform" \
-      "/${VERSION}/terraform_${VERSION}_darwin_amd64.zip" \
-      )"
-  else
-    ARCHITECTURE="$(dpkg --print-architecture)"
-    wget \
-      --quiet \
-      "$(printf '%s' \
-      "https://releases.hashicorp.com/terraform" \
-      "/${VERSION}/terraform_${VERSION}_linux_${ARCHITECTURE}.zip" \
-      )"
-  fi
+	wget \
+		--quiet \
+		"$(printf '%s' \
+		"https://releases.hashicorp.com/terraform" \
+		"/${VERSION}/terraform_${VERSION}_${kernel_name,,}_${architecture}.zip" \
+		)"
   unzip terraform_*.zip
   mv terraform "${TF_EXE}"
 fi
