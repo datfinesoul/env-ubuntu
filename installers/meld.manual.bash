@@ -3,7 +3,7 @@
 source "$(dirname "${0}")/_core.bash"
 
 if [[ "${kernel_name}" == "Darwin" ]]; then
-  true
+	true
 else
   sudo apt-get --yes update
   sudo apt-get --yes install \

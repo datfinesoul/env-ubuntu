@@ -5,3 +5,4 @@ wget
 bat
 ipcalc
 gpg2
+bash-completion@2
