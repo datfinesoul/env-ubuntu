@@ -13,7 +13,7 @@
 	whitespace = -trailing-space
 	ignorecase = true
 	excludesfile = /Users/phadviger/.gitignore_global
-	;editor = /usr/local/bin/vim
+	editor = vim
 	pager = less -FXRS -x2
 [diff]
 	renames = copies
@@ -113,7 +113,7 @@
 	cmd = open -a Firefox.app
 [commit]
 	# relative to git repo root
-	template = /Users/philip.hadviger/.gitmessage
+	template = ~/.gitmessage
 	gpgsign = true
 	verbose = true
 ;[url "https://git@"]

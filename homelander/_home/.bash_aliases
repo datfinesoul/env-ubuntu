@@ -90,4 +90,4 @@ alias iambic-beta="docker run -it --rm -u $(id -u):$(id -g) \
 alias assume='GRANTED_ALIAS_CONFIGURED="true" . assume'
 alias nocolor='TERM=dumb script --command /bin/bash -q /dev/null'
 alias shellcheck='shellcheck --check-sourced --external-sources'
-alias tf='terraform'
+#alias tf='terraform'
