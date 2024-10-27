@@ -57,3 +57,14 @@ Opening in existing browser session.
 ```bash
 echo 2 | sudo tee /sys/module/hid_apple/parameters/fnmode
 ```
+
+### GTK
+
+```log
+Gtk-Message: 19:46:44.146: Not loading module "atk-bridge": The functionality is provided by GTK natively. Please try to not load it.
+```
+
+```bash
+# GTK_MODULES=gail:atk-bridge
+unset GTK_MODULES
+```
