@@ -46,6 +46,8 @@ Opening in existing browser session.
 
 ### Apple Keyboard
 
+- https://www.hashbangcode.com/article/turning-or-fn-mode-ubuntu-linux
+
 | Value | Function | Description |
 | - | - | - |
 | 0 | disabled | Disables the 'fn' key. This means that pressing F2 will trigger F2 to be pressed and not the special action key. Pressing 'fn' + F2 will just press the F2 key as normal. |
