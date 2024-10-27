@@ -41,3 +41,17 @@ Opening in existing browser session.
 ✓ Uploaded the SSH key to your GitHub account: /home/philip.hadviger/.ssh/id_ed25519.pub
 ✓ Logged in as datfinesoul
 ```
+
+## Notes
+
+### Apple Keyboard
+
+| Value | Function | Description |
+| - | - | - |
+| 0 | disabled | Disables the 'fn' key. This means that pressing F2 will trigger F2 to be pressed and not the special action key. Pressing 'fn' + F2 will just press the F2 key as normal. |
+| 1 | fkeyslast | Function keys are used as the last key. Pressing F2 will act as the special key. Pressing 'fn' + F2 will trigger F2. |
+| 2 | fkeysfirst | Function keys are used as the first key. Pressing F2 will act as triggering F2. Pressing 'fn' + F2 will act as the special key. |
+
+```bash
+echo 2 | sudo tee /sys/module/hid_apple/parameters/fnmode
+```
