@@ -1,4 +1,4 @@
-log_tty="/dev/stderr"
+log_tty="/dev/null"
 log_red="$(tput setaf 1)"
 log_green="$(tput setaf 2)"
 log_gray="$(tput dim)$(tput setaf 7)"
