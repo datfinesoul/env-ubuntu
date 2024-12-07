@@ -1,4 +1,3 @@
-log_tty="/dev/null"
 log_red="$(tput setaf 1)"
 log_green="$(tput setaf 2)"
 log_gray="$(tput dim)$(tput setaf 7)"
@@ -7,6 +6,7 @@ log_reset="$(tput sgr0)"
 log_custom () {
 	local prefix="$1"
 	local postfix="$2"
+	local log_tty="${LOG_TTY:-/dev/null}"
 	shift 2
 	if [[ -p /dev/stdin && "$#" -eq 0 ]]; then
 		while IFS= read -r line || [ -n "$line" ]; do

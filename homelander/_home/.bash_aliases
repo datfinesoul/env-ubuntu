@@ -91,3 +91,4 @@ alias assume='GRANTED_ALIAS_CONFIGURED="true" . assume'
 alias nocolor='TERM=dumb script --command /bin/bash -q /dev/null'
 alias shellcheck='shellcheck --check-sourced --external-sources'
 #alias tf='terraform'
+alias pn=pnpm
