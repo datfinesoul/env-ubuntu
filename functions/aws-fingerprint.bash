@@ -1,3 +1,4 @@
+#https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/verify-keys.html
 alias aws-fingerprint=aws_fingerprint
 aws_fingerprint () {
 	openssl pkcs8 -in "$1" -inform PEM -outform DER -topk8 -nocrypt \
