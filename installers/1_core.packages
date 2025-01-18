@@ -20,3 +20,4 @@ build-essential
 git-lfs
 vim
 bat
+libncurses-dev
