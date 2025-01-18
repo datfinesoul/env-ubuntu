@@ -39,3 +39,8 @@ else
   [[ -f "${TARGET_DIR}/assumego" ]] && ln -sf "${TARGET_DIR}/assumego" "${BIN_DIR}/assumego"
   ln -sf "${TARGET_DIR}/granted" "${BIN_DIR}/granted"
 fi
+
+mkdir -p "$HOME/.aws"
+touch "$HOME/.aws/config"
+granted sso populate --prune --sso-region ap-northeast-1 --prefix 'io/' \
+  --no-credential-process https://u-io.awsapps.com/start
