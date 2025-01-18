@@ -1,11 +1,11 @@
-#!/usr/bin/env bash
-source "$(dirname "$(readlink -e -- "$0")")/core.source"
+# shellcheck source=./_core.bash
+. "$(dirname "${0}")/_core.bash"
 
 REPO="${1}"
 TARGET="${1##*/}"
 TARGET="${TARGET%.git}"
 METHOD="${2:-start}"
-PLUGIN_PATH="home/.vim/pack/datfinesoul/${METHOD}/${TARGET}"
+PLUGIN_PATH="homelander/_home/.vim/pack/datfinesoul/${METHOD}/${TARGET}"
 #BRANCH="upgrade-${TARGET}"
 
 if [[ ! "${METHOD}" =~ ^(start|opt)$ ]]; then

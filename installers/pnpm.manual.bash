@@ -25,6 +25,10 @@ curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${version}/install.sh" | 
 wget -qO- https://get.pnpm.io/install.sh | ENV="$HOME/.bashrc" SHELL="$(which bash)" bash -
 pnpm
 pnpm env install --global lts
+
+
+exit 0
+
 npx create-next-app@latest nextjs-dashboard --example "https://github.com/vercel/next-learn/tree/main/dashboard/starter-example" --use-pnpm
 pnpm i @vercel/postgres
 historyc | grep pnpm
