@@ -248,6 +248,7 @@ nnoremap <silent> <space>p  :<C-u>CocListResume<CR>
 
 let g:terraform_align=1
 let g:terraform_fmt_on_save=1
+let g:terraform_binary_path='tofu'
 
 vnoremap > >gv
 vnoremap < <gv
@@ -331,3 +332,10 @@ augroup END
 
 set modeline
 set modelines=5
+
+" OpenTofu Support stuff for outdated polyglot
+
+au BufRead,BufNewFile *.tofu      setf terraform
+autocmd BufWritePre *.tofu call terraform#fmt()
+
+highlight CocMenuSel ctermbg=darkgrey
