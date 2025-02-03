@@ -32,7 +32,7 @@ gs () {
 			fi
 			# No matching command was executed so add the commands in this
 			#   _gs dir to a collection of commands
-			gs_commands+="$(find "${gs_path}/" -type l -exec basename {} \;)"$'\n'
+			gs_commands+="$(find "${gs_path}/" -type l ! -xtype l -perm -111 -exec basename {} \;)"$'\n'
 		fi
 	done
 	# Either exit because no command was found or print the list of commands
