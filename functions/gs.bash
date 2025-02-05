@@ -27,6 +27,7 @@ gs () {
 		if [[ -e "${gs_path}" ]]; then
 			# If a _gs command was passed in $1 execute it and leave the function
 			if [[ -n "${command}" && -e "${gs_path}/${command}" ]]; then
+				shift
 				"${gs_path}/${command}" "$@"
 				return
 			fi
