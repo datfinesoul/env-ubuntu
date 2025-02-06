@@ -8,5 +8,5 @@ fi
 
 # vim specific stuff
 pushd "${HOME}/.vim/pack/datfinesoul/start/coc.nvim"
-pnpm install
+pnpm install || npm install
 popd
