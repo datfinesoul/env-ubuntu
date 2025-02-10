@@ -50,7 +50,7 @@ tar xzf "${zip_file}"
 #unzip "${zip_file}"
 
 mv "${executable}" "${target_dir}/${versioned_exe}"
-ln --symbolic --force "${target_dir}/${versioned_exe}" "${bin_dir}/tf"
-ln --symbolic --force "${target_dir}/${versioned_exe}" "${bin_dir}/tofu"
+ln -sf "${target_dir}/${versioned_exe}" "${bin_dir}/tf"
+ln -sf "${target_dir}/${versioned_exe}" "${bin_dir}/tofu"
 
 mkdir -p "$HOME/.terraform.d/plugin-cache"
