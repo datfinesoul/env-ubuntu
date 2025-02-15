@@ -33,7 +33,17 @@ gs () {
 			fi
 			# No matching command was executed so add the commands in this
 			#   _gs dir to a collection of commands
-			gs_commands+="$(find "${gs_path}/" -type l ! -xtype l -perm -111 -exec basename {} \;)"$'\n'
+			#gs_commands+="$(find "${gs_path}/" -type l ! -xtype l -perm -111 -exec basename {} \;)"$'\n'
+			gs_commands+="$(find "${gs_path}/" -type l ! -xtype l -perm -111 -exec sh -c '
+				repo_root=$(git rev-parse --show-toplevel)
+				prefix=$(git rev-parse --show-prefix)
+				rel_path=${1#"$repo_root/"}
+				target=$(readlink -f "$1")
+				target_rel=${target#"$repo_root/"}
+				gs_link="$(basename "$1")"
+				echo "$gs_link -> $target_rel"
+				' _ {} \;
+			)"$'\n'
 		fi
 	done
 	# Either exit because no command was found or print the list of commands
@@ -41,6 +51,7 @@ gs () {
 		>&2 echo "[x] no _gs commands found"
 	else
 		# print the collection
-		echo -e "$gs_commands" | sort | >&2 uniq
+		#echo -e "$gs_commands" | sort | >&2 uniq
+		awk '!seen[$1]++' <<< "$gs_commands" | sort
 	fi
 }
