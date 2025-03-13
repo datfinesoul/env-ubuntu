@@ -93,7 +93,7 @@
 [help]
 	format = html
 [web]
-	browser = gc
+	browser = ff
 [filter "lfs"]
 	clean = git-lfs clean %f
 	smudge = git-lfs smudge %f
@@ -107,10 +107,8 @@
 	fsckobjects = true
 [status]
 	relativePaths = false
-[browser "gc"]
-	cmd = "google-chrome"
 [browser "ff"]
-	cmd = open -a Firefox.app
+	cmd = "bash -c 'if [ \"$(uname)\" = \"Darwin\" ]; then open -a \"Firefox\" \"$1\"; else firefox \"$1\"; fi' --"
 [commit]
 	gpgsign = true
 	verbose = true
