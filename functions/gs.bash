@@ -11,9 +11,15 @@ gs() {
 	local -a dirs
 	IFS=/ read -r -a dirs <<< "$(git rev-parse --show-prefix)"
 
-	local gs_path gs_commands index
+	local gs_path index
 	local command="${1:-}"
 	local length="${#dirs[@]}"
+	local found_dirs=0
+	declare -A gs_dir_commands
+	local -a dir_order
+
+	# Keep track of seen commands to avoid duplicates from further dirs
+	declare -A seen_commands
 
 	# Search for _gs directories from current path up to repo root
 	for (( index="${length}"; index>=0; index-- )); do
@@ -28,23 +34,53 @@ gs() {
 				return
 			fi
 
-			# Otherwise collect available commands with their targets
-			gs_commands+="$(find "${gs_path}/" -type l ! -xtype l -perm -111 -exec sh -c '
-				repo_root=$(git rev-parse --show-toplevel)
-				target=$(readlink -f "$1")
-				target_rel=${target#"$repo_root/"}
-				gs_link="$(basename "$1")"
-				echo "$gs_link -> $target_rel"
-				' _ {} \;
-			)"$'\n'
+			# Otherwise collect available commands by directory
+			local display_path
+			if [[ "${gs_path}" == "${tld}/_gs" ]]; then
+				display_path="_gs/"
+			else
+				# Remove the top level directory and leading slash
+				display_path="${gs_path#"${tld}/"}"
+			fi
+
+			# Store path for ordering
+			dir_order+=("${display_path}")
+
+			# Get commands for this directory (only include unseen commands)
+			local cmd_list=""
+			while IFS= read -r cmd; do
+				[[ -z "${cmd}" ]] && continue
+				# Only add commands we haven't seen before
+				if [[ -z "${seen_commands["${cmd}"]}" ]]; then
+					seen_commands["${cmd}"]=1
+					cmd_list+="${cmd}"$'\n'
+				fi
+			done < <(find "${gs_path}/" -type l ! -xtype l -perm -111 -exec basename {} \; | sort)
+
+			# Remove trailing newline
+			cmd_list="${cmd_list%$'\n'}"
+
+			if [[ -n "${cmd_list}" ]]; then
+				gs_dir_commands["${display_path}"]="${cmd_list}"
+				found_dirs=1
+			fi
 		fi
 	done
 
 	# Display results or error
-	if [[ -z "${gs_commands}" ]]; then
-		echo >&2 "[x] no _gs commands found"
+	if [[ ${found_dirs} -eq 0 ]]; then
+		>&2 echo "[x] no _gs commands found"
 	else
-		awk '!seen[$1]++' <<< "${gs_commands}" | sort
-		echo
+		# Display commands by directory, closest first
+		for dir in "${dir_order[@]}"; do
+			# Skip directories with no commands to display
+			[[ -z "${gs_dir_commands["${dir}"]}" ]] && continue
+
+			echo "${dir}"
+			while IFS= read -r cmd; do
+				[[ -z "${cmd}" ]] && continue
+				echo "→ ${cmd}"
+			done <<< "${gs_dir_commands["${dir}"]}"
+		done
 	fi
 }
