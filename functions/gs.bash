@@ -8,6 +8,7 @@ gs() {
 	[[ -z "${tld}" ]] && return 1
 
 	# Parse current repo-relative path into array
+	# Example: if current path is project/src/utils, then dirs=["project","src","utils"]
 	local -a dirs
 	IFS=/ read -r -a dirs <<< "$(git rev-parse --show-prefix)"
 
@@ -35,6 +36,11 @@ gs() {
 	declare -A seen_commands
 
 	# Traversal proceeds from current directory up to repo root
+	# For project/src/utils, checks _gs dirs in this order:
+	#  1. project/src/utils/_gs
+	#  2. project/src/_gs
+	#  3. project/_gs
+	#  4. _gs (repo root)
 	for (( index="${length}"; index>=0; index-- )); do
 		gs_path="${tld}$(printf "/%s" "${dirs[@]:0:$index}")/_gs"
 		gs_path="${gs_path//\/\//\/}"  # Normalize path
@@ -69,6 +75,7 @@ gs() {
 			fi
 
 			# Find executable symlinks and filter out already-seen commands
+			# This mimics PATH resolution where first match wins
 			local cmd_list=""
 			while IFS= read -r cmd; do
 				[[ -z "${cmd}" ]] && continue
@@ -114,7 +121,8 @@ gs() {
 			fi
 		done
 
-		# Output directories closest-first with their unique commands
+		# Output: directories are shown closest-first with their unique commands
+		# When a command appears in multiple _gs dirs, only the closest occurrence is shown
 		for dir in "${dir_order[@]}"; do
 			# Skip directories with no commands to display
 			[[ -z "${gs_dir_commands["${dir}"]}" ]] && continue
