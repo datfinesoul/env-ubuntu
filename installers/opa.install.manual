@@ -2,11 +2,13 @@
 # shellcheck disable=SC1091
 source "$(dirname "${0}")/_core.bash"
 
+version="${1:-v0.70.0}"
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  curl -L -o opa "https://openpolicyagent.org/downloads/v0.67.0/opa_darwin_amd64"
-  false
+  curl -L -o opa "https://openpolicyagent.org/downloads/${version}/opa_darwin_${architecture}_static"
+  chmod 700 opa
+  mv opa "${HOME}/.local/bin/opa"
 else
-  curl -L -o opa "https://openpolicyagent.org/downloads/v0.67.0/opa_linux_amd64_static"
+  curl -L -o opa "https://openpolicyagent.org/downloads/${version}/opa_linux_${architecture}_static"
   chmod 700 opa
   mv opa "${HOME}/.local/bin/opa"
 fi
