@@ -24,7 +24,7 @@ else
 
   git clone 'https://gitlab.gnome.org/GNOME/meld.git'
   cd meld
-  meson -Dprefix="${HOME}/.local/bin" _build
+  meson -Dprefix="${HOME}/.local" _build
   cd _build
   ninja
   ninja install
