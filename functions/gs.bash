@@ -16,7 +16,14 @@ gs() {
 	local length="${#dirs[@]}"
 	local found_dirs=0
 	declare -A gs_dir_commands
+	declare -A cmd_descriptions
 	local -a dir_order
+
+	# Check for jq availability
+	local has_jq=0
+	if type jq &> /dev/null; then
+		has_jq=1
+	fi
 
 	# Keep track of seen commands to avoid duplicates from further dirs
 	declare -A seen_commands
@@ -53,6 +60,20 @@ gs() {
 				# Only add commands we haven't seen before
 				if [[ -z "${seen_commands["${cmd}"]}" ]]; then
 					seen_commands["${cmd}"]=1
+
+					# Check for description file
+					local desc_file="${gs_path}/${cmd}.gs.json"
+					local desc=""
+					if [[ -f "${desc_file}" ]]; then
+						# Extract description using jq if available
+						if [[ ${has_jq} -eq 1 ]]; then
+							desc=$(jq -r '.description // empty' "${desc_file}" 2>/dev/null)
+						fi
+					fi
+
+					# Store description for this command
+					cmd_descriptions["${cmd}"]="${desc}"
+
 					cmd_list+="${cmd}"$'\n'
 				fi
 			done < <(find "${gs_path}/" -type l ! -xtype l -perm -111 -exec basename {} \; | sort)
@@ -71,6 +92,14 @@ gs() {
 	if [[ ${found_dirs} -eq 0 ]]; then
 		>&2 echo "[x] no _gs commands found"
 	else
+		# Find the longest command name for alignment
+		local max_len=0
+		for cmd in "${!cmd_descriptions[@]}"; do
+			if [[ ${#cmd} -gt ${max_len} ]]; then
+				max_len=${#cmd}
+			fi
+		done
+
 		# Display commands by directory, closest first
 		for dir in "${dir_order[@]}"; do
 			# Skip directories with no commands to display
@@ -79,7 +108,13 @@ gs() {
 			echo "${dir}"
 			while IFS= read -r cmd; do
 				[[ -z "${cmd}" ]] && continue
-				echo "→ ${cmd}"
+
+				local desc="${cmd_descriptions["${cmd}"]}"
+				if [[ -n "${desc}" ]]; then
+					printf "→ %-${max_len}s : %s\n" "${cmd}" "${desc}"
+				else
+					printf "→ %s\n" "${cmd}"
+				fi
 			done <<< "${gs_dir_commands["${dir}"]}"
 		done
 	fi
