@@ -1,5 +1,3 @@
-<!-- trunk-ignore-all(prettier) -->
-<!-- trunk-ignore-all(markdownlint/MD041) -->
 ## Overview
 
 A collections of things to get my terminal up and running in a fairly consistent state
@@ -44,7 +42,6 @@ Opening in existing browser session.
 
 ### Apple Keyboard
 
-<!-- trunk-ignore(markdownlint/MD034) -->
 - https://www.hashbangcode.com/article/turning-or-fn-mode-ubuntu-linux
 
 | Value | Function | Description |
