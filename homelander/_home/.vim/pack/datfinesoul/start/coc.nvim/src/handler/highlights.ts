@@ -1,17 +1,27 @@
-import { Neovim } from '@chemzqm/neovim'
-import { CancellationTokenSource, Disposable, DocumentHighlight, DocumentHighlightKind, Position, Range } from 'vscode-languageserver-protocol'
+'use strict'
+import { Neovim } from '../neovim'
+import { Buffer as NodeBuffer } from 'buffer'
+import { DocumentHighlight, DocumentHighlightKind, Position, Range } from 'vscode-languageserver-types'
+import commands from '../commands'
 import events from '../events'
-import languages from '../languages'
+import languages, { ProviderName } from '../languages'
 import Document from '../model/document'
-import { ConfigurationChangeEvent, HandlerDelegate } from '../types'
+import { IConfigurationChangeEvent } from '../types'
 import { disposeAll } from '../util'
+import { comparePosition, compareRangesUsingStarts, emptyRange } from '../util/position'
+import { CancellationTokenSource, Disposable } from '../util/protocol'
+import { byteIndex } from '../util/string'
+import window from '../window'
 import workspace from '../workspace'
-const logger = require('../util/logger')('documentHighlight')
+import { HandlerDelegate } from './types'
 
 interface HighlightConfig {
+  limit: number
   priority: number
   timeout: number
 }
+
+type HighlightPosition = [number, number, number]
 
 /**
  * Highlight same symbols on current window.
@@ -22,20 +32,36 @@ export default class Highlights {
   private disposables: Disposable[] = []
   private tokenSource: CancellationTokenSource
   private highlights: Map<number, DocumentHighlight[]> = new Map()
-  private timer: NodeJS.Timer
+  private timer: NodeJS.Timeout
   constructor(private nvim: Neovim, private handler: HandlerDelegate) {
     events.on(['CursorMoved', 'CursorMovedI'], () => {
       this.cancel()
       this.clearHighlights()
     }, null, this.disposables)
-    this.getConfiguration()
-    workspace.onDidChangeConfiguration(this.getConfiguration, this, this.disposables)
+    this.loadConfiguration()
+    workspace.onDidChangeConfiguration(this.loadConfiguration, this, this.disposables)
+    window.onDidChangeActiveTextEditor(() => {
+      this.loadConfiguration()
+    }, null, this.disposables)
+    commands.register({
+      id: 'document.jumpToNextSymbol',
+      execute: async () => {
+        await this.jumpSymbol('next')
+      }
+    }, false, 'Jump to next symbol highlight position.')
+    commands.register({
+      id: 'document.jumpToPrevSymbol',
+      execute: async () => {
+        await this.jumpSymbol('previous')
+      }
+    }, false, 'Jump to previous symbol highlight position.')
   }
 
-  private getConfiguration(e?: ConfigurationChangeEvent): void {
-    let config = workspace.getConfiguration('documentHighlight')
+  private loadConfiguration(e?: IConfigurationChangeEvent): void {
+    let config = workspace.getConfiguration('documentHighlight', this.handler.uri)
     if (!e || e.affectsConfiguration('documentHighlight')) {
       this.config = Object.assign(this.config || {}, {
+        limit: config.get<number>('limit', 200),
         priority: config.get<number>('priority', -1),
         timeout: config.get<number>('timeout', 300)
       })
@@ -45,7 +71,7 @@ export default class Highlights {
   public isEnabled(bufnr: number, cursors: number): boolean {
     let doc = workspace.getDocument(bufnr)
     if (!doc || !doc.attached || cursors) return false
-    if (!languages.hasProvider('documentHighlight', doc.textDocument)) return false
+    if (!languages.hasProvider(ProviderName.DocumentHighlight, doc.textDocument)) return false
     return true
   }
 
@@ -68,7 +94,7 @@ export default class Highlights {
     if (!highlights) return
     let groups: { [index: string]: Range[] } = {}
     for (let hl of highlights) {
-      if (!hl.range) continue
+      if (!Range.is(hl.range)) continue
       let hlGroup = hl.kind == DocumentHighlightKind.Text
         ? 'CocHighlightText'
         : hl.kind == DocumentHighlightKind.Read ? 'CocHighlightRead' : 'CocHighlightWrite'
@@ -79,18 +105,60 @@ export default class Highlights {
     nvim.pauseNotification()
     win.clearMatchGroup('^CocHighlight')
     for (let hlGroup of Object.keys(groups)) {
-      win.highlightRanges(hlGroup, groups[hlGroup], this.config.priority, true)
+      let positions: HighlightPosition[] = []
+      for (let range of groups[hlGroup]) {
+        this.addHighlightPositions(positions, doc, range, this.config.limit)
+      }
+      nvim.call('matchaddpos', [hlGroup, positions, this.config.priority], true)
     }
-    void nvim.resumeNotification(true, true)
+    nvim.resumeNotification(true, true)
     this.highlights.set(winid, highlights)
+  }
+
+  public addHighlightPositions(items: HighlightPosition[], doc: Document, range: Range, limit: number): void {
+    let { start, end } = range
+    if (emptyRange(range)) return
+    for (let line = start.line; line <= end.line; line++) {
+      const text = doc.getline(line, false)
+      let colStart = line == start.line ? byteIndex(text, start.character) : 0
+      let colEnd = line == end.line ? byteIndex(text, end.character) : NodeBuffer.byteLength(text)
+      if (colStart >= colEnd) continue
+      items.push([line + 1, colStart + 1, colEnd - colStart])
+      if (items.length == limit) break
+    }
+  }
+
+  public async jumpSymbol(direction: 'previous' | 'next'): Promise<void> {
+    let ranges = await this.getSymbolsRanges()
+    if (!ranges) return
+    let pos = await window.getCursorPosition()
+    if (direction == 'next') {
+      for (let i = 0; i <= ranges.length - 1; i++) {
+        if (comparePosition(ranges[i].start, pos) > 0) {
+          await window.moveTo(ranges[i].start)
+          return
+        }
+      }
+      await window.moveTo(ranges[0].start)
+    } else {
+      for (let i = ranges.length - 1; i >= 0; i--) {
+        if (comparePosition(ranges[i].end, pos) < 0) {
+          await window.moveTo(ranges[i].start)
+          return
+        }
+      }
+      await window.moveTo(ranges[ranges.length - 1].start)
+    }
   }
 
   public async getSymbolsRanges(): Promise<Range[]> {
     let { doc, position } = await this.handler.getCurrentState()
-    this.handler.checkProvier('documentHighlight', doc.textDocument)
+    this.handler.checkProvider(ProviderName.DocumentHighlight, doc.textDocument)
     let highlights = await this.getHighlights(doc, position)
     if (!highlights) return null
-    return highlights.map(o => o.range)
+    return highlights.filter(o => Range.is(o.range)).map(o => o.range).sort((a, b) => {
+      return compareRangesUsingStarts(a, b)
+    })
   }
 
   public hasHighlights(winid: number): boolean {
@@ -105,7 +173,6 @@ export default class Highlights {
     this.cancel()
     let source = this.tokenSource = new CancellationTokenSource()
     let timer = this.timer = setTimeout(() => {
-      if (source.token.isCancellationRequested) return
       source.cancel()
     }, this.config.timeout)
     let highlights = await languages.getDocumentHighLight(doc.textDocument, position, source.token)

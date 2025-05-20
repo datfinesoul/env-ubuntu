@@ -1,6 +1,20 @@
-import { DiagnosticSeverity, Diagnostic, DiagnosticTag } from 'vscode-languageserver-protocol'
-import { FloatConfig, LocationListItem } from '../types'
-import { comparePosition } from '../util/position'
+'use strict'
+import type { VirtualTextOption } from '../neovim'
+import { Diagnostic, DiagnosticSeverity, DiagnosticTag, Range, TextEdit } from 'vscode-languageserver-types'
+import { FloatConfig } from '../types'
+import { comparePosition, rangeOverlap } from '../util/position'
+import { byteIndex } from '../util/string'
+import { getPosition } from '../util/textedit'
+
+export interface LocationListItem {
+  bufnr: number
+  lnum: number
+  end_lnum: number
+  col: number
+  end_col: number
+  text: string
+  type: string
+}
 
 export enum DiagnosticHighlight {
   Error = 'CocErrorHighlight',
@@ -11,8 +25,12 @@ export enum DiagnosticHighlight {
   Unused = 'CocUnusedHighlight'
 }
 
+/**
+ * Local diagnostic config
+ */
 export interface DiagnosticConfig {
-  highlighLimit: number
+  enable: boolean
+  highlightLimit: number
   highlightPriority: number
   autoRefresh: boolean
   enableSign: boolean
@@ -21,32 +39,40 @@ export interface DiagnosticConfig {
   checkCurrentLine: boolean
   enableMessage: string
   displayByAle: boolean
+  displayByVimDiagnostic: boolean
   signPriority: number
-  errorSign: string
-  warningSign: string
-  infoSign: string
-  hintSign: string
   level: number
   locationlistLevel: number | undefined
   signLevel: number | undefined
   messageLevel: number | undefined
   messageTarget: string
-  messageDelay: number
   refreshOnInsertMode: boolean
   virtualText: boolean
+  virtualTextAlign: VirtualTextOption['text_align']
   virtualTextLevel: number | undefined
-  virtualTextAlignRight: boolean
   virtualTextWinCol: number | null
   virtualTextCurrentLineOnly: boolean
-  virtualTextSrcId?: number
   virtualTextPrefix: string
+  virtualTextFormat: string
+  virtualTextLimitInOneLine: number
   virtualTextLines: number
   virtualTextLineSeparator: string
   filetypeMap: object
-  showUnused?: boolean
-  showDeprecated?: boolean
-  format?: string
+  showUnused: boolean
+  showDeprecated: boolean
+  format: string
   floatConfig: FloatConfig
+  showRelatedInformation: boolean
+}
+
+export function formatDiagnostic(format: string, diagnostic: Diagnostic): string {
+  let { source, code, severity, message } = diagnostic
+  let s = getSeverityName(severity)[0]
+  const codeStr = code ? ' ' + code : ''
+  return format.replace('%source', source)
+    .replace('%code', codeStr)
+    .replace('%severity', s)
+    .replace('%message', message)
 }
 
 export function getSeverityName(severity: DiagnosticSeverity): string {
@@ -106,7 +132,7 @@ export function getNameFromSeverity(severity: DiagnosticSeverity): string {
   }
 }
 
-export function getLocationListItem(bufnr: number, diagnostic: Diagnostic): LocationListItem {
+export function getLocationListItem(bufnr: number, diagnostic: Diagnostic, lines?: ReadonlyArray<string>): LocationListItem {
   let { start, end } = diagnostic.range
   let owner = diagnostic.source || 'coc.nvim'
   let msg = diagnostic.message.split('\n')[0]
@@ -115,8 +141,8 @@ export function getLocationListItem(bufnr: number, diagnostic: Diagnostic): Loca
     bufnr,
     lnum: start.line + 1,
     end_lnum: end.line + 1,
-    col: start.character + 1,
-    end_col: end.character + 1,
+    col: Array.isArray(lines) ? byteIndex(lines[start.line] ?? '', start.character) + 1 : start.character + 1,
+    end_col: Array.isArray(lines) ? byteIndex(lines[end.line] ?? '', end.character) + 1 : end.character + 1,
     text: `[${owner}${diagnostic.code ? ' ' + diagnostic.code : ''}] ${msg} [${type}]`,
     type
   }
@@ -126,30 +152,55 @@ export function getLocationListItem(bufnr: number, diagnostic: Diagnostic): Loca
  * Sort by severity and position
  */
 export function sortDiagnostics(a: Diagnostic, b: Diagnostic): number {
-  if ((a.severity || 1) != (b.severity || 1)) {
-    return (a.severity || 1) - (b.severity || 1)
-  }
+  let sa = a.severity ?? 1
+  let sb = b.severity ?? 1
+  if (sa != sb) return sa - sb
   let d = comparePosition(a.range.start, b.range.start)
   if (d != 0) return d
   return a.source > b.source ? 1 : -1
 }
 
-export function getHighlightGroup(diagnostic: Diagnostic): DiagnosticHighlight {
+export function getHighlightGroup(diagnostic: Diagnostic): DiagnosticHighlight[] {
+  let hlGroups: DiagnosticHighlight[] = []
   let tags = diagnostic.tags || []
   if (tags.includes(DiagnosticTag.Deprecated)) {
-    return DiagnosticHighlight.Deprecated
+    hlGroups.push(DiagnosticHighlight.Deprecated)
   }
   if (tags.includes(DiagnosticTag.Unnecessary)) {
-    return DiagnosticHighlight.Unused
+    hlGroups.push(DiagnosticHighlight.Unused)
   }
   switch (diagnostic.severity) {
-    case DiagnosticSeverity.Warning:
-      return DiagnosticHighlight.Warning
-    case DiagnosticSeverity.Information:
-      return DiagnosticHighlight.Information
     case DiagnosticSeverity.Hint:
-      return DiagnosticHighlight.Hint
-    default:
-      return DiagnosticHighlight.Error
+      hlGroups.push(DiagnosticHighlight.Hint)
+      break
+    case DiagnosticSeverity.Information:
+      hlGroups.push(DiagnosticHighlight.Information)
+      break
+    case DiagnosticSeverity.Warning:
+      hlGroups.push(DiagnosticHighlight.Warning)
+      break
+    case DiagnosticSeverity.Error:
+      hlGroups.push(DiagnosticHighlight.Error)
+      break
   }
+
+  return hlGroups
+}
+
+export function adjustDiagnostics(diagnostics: ReadonlyArray<Diagnostic>, edit: TextEdit): ReadonlyArray<Diagnostic> {
+  let res: Diagnostic[] = []
+  let { range } = edit
+  for (let diag of diagnostics) {
+    let r = diag.range
+    if (rangeOverlap(range, r)) continue
+    if (comparePosition(r.start, range.end) > 0) {
+      let s = getPosition(r.start, edit)
+      let e = getPosition(r.end, edit)
+      if (s.line >= 0 && s.character >= 0 && e.line >= 0 && e.character >= 0) {
+        diag.range = Range.create(s, e)
+      }
+    }
+    res.push(diag)
+  }
+  return res
 }

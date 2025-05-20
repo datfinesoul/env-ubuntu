@@ -1,90 +1,117 @@
-import { Neovim } from '@chemzqm/neovim'
-import { CancellationTokenSource, Disposable } from 'vscode-languageserver-protocol'
+'use strict'
+import { Neovim } from '../neovim'
+import { Position } from 'vscode-languageserver-types'
+import { URI } from 'vscode-uri'
+import commands from '../commands'
+import type { IConfigurationChangeEvent } from '../configuration/types'
 import events, { InsertChange, PopupChangeEvent } from '../events'
-import Document from '../model/document'
-import sources from '../sources'
-import { CompleteOption, ExtendedCompleteItem, FloatConfig, ISource, VimCompleteItem } from '../types'
-import { disposeAll } from '../util'
+import { createLogger } from '../logger'
+import type Document from '../model/document'
+import { defaultValue, disposeAll, getConditionValue } from '../util'
+import { isFalsyOrEmpty, toArray } from '../util/array'
 import * as Is from '../util/is'
-import { equals } from '../util/object'
-import { byteLength, byteSlice } from '../util/string'
+import { debounce } from '../util/node'
+import { toNumber } from '../util/numbers'
+import { toObject } from '../util/object'
+import type { Disposable } from '../util/protocol'
+import { byteIndex, byteLength, byteSlice, characterIndex, toText } from '../util/string'
+import window from '../window'
 import workspace from '../workspace'
-import Complete, { CompleteConfig, MruItem } from './complete'
-import Floating, { PumBounding } from './floating'
-import MruLoader from './mru'
-import { shouldIndent, waitInsertEvent, waitTextChangedI } from './util'
-const logger = require('../util/logger')('completion')
-const completeItemKeys = ['abbr', 'menu', 'info', 'kind', 'icase', 'dup', 'empty', 'user_data']
-
-export interface LastInsert {
-  character: string
-  timestamp: number
-}
+import Complete from './complete'
+import Floating from './floating'
+import PopupMenu, { PopupMenuConfig } from './pum'
+import sources from './sources'
+import { CompleteConfig, CompleteDoneOption, CompleteFinishKind, CompleteItem, CompleteOption, DurationCompleteItem, InsertMode, ISource, SortMethod } from './types'
+import { checkIgnoreRegexps, createKindMap, getInput, getResumeInput, MruLoader, shouldStop, toCompleteDoneItem } from './util'
+const logger = createLogger('completion')
+const TRIGGER_TIMEOUT = getConditionValue(200, 20)
+const CURSORMOVE_DEBOUNCE = getConditionValue(10, 0)
 
 export class Completion implements Disposable {
   public config: CompleteConfig
-  private nvim: Neovim
+  private staticConfig: PopupMenuConfig
+  private pum: PopupMenu
+  private _mru: MruLoader
   private pretext: string | undefined
-  private activated = false
-  private triggering = false
-  private popupEvent: PopupChangeEvent
   private triggerTimer: NodeJS.Timeout
-  private completeTimer: NodeJS.Timeout
-  private currentSources: string[] = []
+  private popupEvent: PopupChangeEvent
   private floating: Floating
-  // current input string
-  private input: string
   private disposables: Disposable[] = []
   private complete: Complete | null = null
-  private resolveTokenSource: CancellationTokenSource
-  // saved for commit character.
-  private previousItem: VimCompleteItem | {} | undefined
-  private mru: MruLoader = new MruLoader()
+  private _debounced: ((bufnr: number, cursor: [number, number], hasInsert: boolean) => void) & { clear(): void }
+  // Ordered items shown in the pum
+  public activeItems: ReadonlyArray<DurationCompleteItem> = []
+
+  private get nvim(): Neovim {
+    return workspace.nvim
+  }
 
   public init(): void {
-    this.nvim = workspace.nvim
-    this.config = this.getCompleteConfig()
-    workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('suggest')) {
-        this.config = this.getCompleteConfig()
-      }
+    this.loadConfiguration()
+    workspace.onDidChangeConfiguration(this.loadConfiguration, this, this.disposables)
+    window.onDidChangeActiveTextEditor(e => {
+      this.loadLocalConfig(e.document)
     }, null, this.disposables)
-    this.floating = new Floating(workspace.nvim, workspace.env.isVim)
-    events.on(['InsertCharPre', 'MenuPopupChanged', 'TextChangedI', 'CursorMovedI', 'InsertLeave'], () => {
-      if (this.triggerTimer) {
-        clearTimeout(this.triggerTimer)
-        this.triggerTimer = null
-      }
-      if (this.completeTimer) {
-        clearTimeout(this.completeTimer)
-        this.completeTimer = null
-      }
+    this._mru = new MruLoader()
+    this.pum = new PopupMenu(this.staticConfig, this._mru)
+    this.floating = new Floating(this.staticConfig)
+    this._debounced = debounce(this.onCursorMovedI.bind(this), CURSORMOVE_DEBOUNCE)
+    events.on('CursorMoved', () => {
+      this.stop(true)
     }, null, this.disposables)
-    events.on('InsertLeave', () => {
-      this.stop()
+    events.on('PumNavigate', () => {
+      this.complete?.cancel()
+    }, null, this.disposables)
+    events.on('CursorMovedI', this._debounced, this, this.disposables)
+    events.on('CursorMovedI', () => {
+      clearTimeout(this.triggerTimer)
+    }, null, this.disposables)
+    events.on('CompleteStop', async kind => {
+      await this.stopAwaitable(false, kind)
     }, null, this.disposables)
     events.on('InsertEnter', this.onInsertEnter, this, this.disposables)
-    events.on('TextChangedP', this.onTextChangedP, this, this.disposables)
     events.on('TextChangedI', this.onTextChangedI, this, this.disposables)
-    events.on('CompleteDone', async item => {
-      this.previousItem = this.popupEvent?.completed_item
-      this.popupEvent = null
-      if (!this.activated) return
-      this.cancelResolve()
-      if (!Is.vimCompleteItem(item)) {
-        let ev = await waitInsertEvent()
-        if (ev == 'CursorMovedI') this.stop()
-      } else {
-        await this.onCompleteDone(item)
-      }
-    }, null, this.disposables)
+    events.on('TextChangedP', this.onTextChangedP, this, this.disposables)
     events.on('MenuPopupChanged', async ev => {
-      if (!this.activated || this.document?.isCommandLine) return
-      if (equals(this.popupEvent, ev)) return
-      this.cancelResolve()
+      if (!this.option) return
       this.popupEvent = ev
-      await this.onPumChange()
+      let resolved = this.complete.resolveItem(this.selectedItem)
+      if (!resolved || (!ev.move && this.complete.isCompleting)) return
+      let detailRendered = this.selectedItem.detailRendered
+      let showDocs = this.config.enableFloat
+      await this.floating.resolveItem(resolved.source, resolved.item, this.option, showDocs, detailRendered)
     }, null, this.disposables)
+    this.nvim.call('coc#ui#check_pum_keymappings', [this.config.autoTrigger], true)
+    commands.registerCommand('editor.action.triggerSuggest', async (source?: string) => {
+      await this.startCompletion({ source })
+    }, this, true)
+  }
+
+  public get mru(): MruLoader {
+    return this._mru
+  }
+
+  public onCursorMovedI(bufnr: number, cursor: [number, number], hasInsert: boolean): void {
+    if (hasInsert || !this.option || bufnr !== this.option.bufnr) return
+    let { linenr, colnr, col } = this.option
+    if (linenr === cursor[0]) {
+      if (cursor[1] == colnr && cursor[1] === byteLength(toText(this.pretext)) + 1) {
+        return
+      }
+      let line = this.document.getline(cursor[0] - 1)
+      if (line.match(/^\s*/)[0] !== this.option.line.match(/^\s*/)[0]) {
+        return
+      }
+      let curr = characterIndex(line, cursor[1] - 1)
+      let start = characterIndex(line, col)
+      if (start < curr) {
+        let text = line.substring(start, curr)
+        if (!this.inserted && text === this.pum.search) {
+          return
+        }
+      }
+    }
+    this.stop(true)
   }
 
   public get option(): CompleteOption {
@@ -92,524 +119,348 @@ export class Completion implements Disposable {
     return this.complete.option
   }
 
-  private get selectedItem(): VimCompleteItem | null {
-    if (!this.popupEvent) return null
-    let { completed_item } = this.popupEvent
-    return Is.vimCompleteItem(completed_item) ? completed_item : null
-  }
-
   public get isActivated(): boolean {
-    return this.activated
+    return this.complete != null
   }
 
-  private get document(): Document | null {
+  public get inserted(): boolean {
+    return this.popupEvent != null && this.popupEvent.inserted
+  }
+
+  public get document(): Document | null {
     if (!this.option) return null
     return workspace.getDocument(this.option.bufnr)
   }
 
-  private getCompleteConfig(): CompleteConfig {
-    let suggest = workspace.getConfiguration('suggest')
-    function getConfig<T>(key, defaultValue: T): T {
-      return suggest.get<T>(key, defaultValue)
-    }
-    let keepCompleteopt = getConfig<boolean>('keepCompleteopt', false)
-    let autoTrigger = getConfig<string>('autoTrigger', 'always')
-    if (keepCompleteopt && autoTrigger != 'none') {
-      let { completeOpt } = workspace
-      if (!completeOpt.includes('noinsert') && !completeOpt.includes('noselect')) {
-        autoTrigger = 'none'
-      }
-    }
-    let floatEnable = workspace.floatSupported && getConfig<boolean>('floatEnable', true)
-    let acceptSuggestionOnCommitCharacter = workspace.env.pumevent && getConfig<boolean>('acceptSuggestionOnCommitCharacter', false)
-    return {
-      autoTrigger,
-      floatEnable,
-      keepCompleteopt,
-      selection: getConfig<'none' | 'recentlyUsed' | 'recentlyUsedByPrefix'>('selection', 'recentlyUsed'),
-      floatConfig: getConfig<FloatConfig>('floatConfig', {}),
-      defaultSortMethod: getConfig<string>('defaultSortMethod', 'length'),
-      removeDuplicateItems: getConfig<boolean>('removeDuplicateItems', false),
-      disableMenuShortcut: getConfig<boolean>('disableMenuShortcut', false),
-      acceptSuggestionOnCommitCharacter,
-      disableKind: getConfig<boolean>('disableKind', false),
-      disableMenu: getConfig<boolean>('disableMenu', false),
-      previewIsKeyword: getConfig<string>('previewIsKeyword', '@,48-57,_192-255'),
-      enablePreview: getConfig<boolean>('enablePreview', false),
-      enablePreselect: getConfig<boolean>('enablePreselect', false),
-      triggerCompletionWait: getConfig<number>('triggerCompletionWait', 50),
-      labelMaxLength: getConfig<number>('labelMaxLength', 200),
-      triggerAfterInsertEnter: getConfig<boolean>('triggerAfterInsertEnter', false),
-      noselect: getConfig<boolean>('noselect', true),
-      maxItemCount: getConfig<number>('maxCompleteItemCount', 50),
-      timeout: getConfig<number>('timeout', 500),
-      minTriggerInputLength: getConfig<number>('minTriggerInputLength', 1),
-      snippetIndicator: getConfig<string>('snippetIndicator', '~'),
-      fixInsertedWord: getConfig<boolean>('fixInsertedWord', true),
-      localityBonus: getConfig<boolean>('localityBonus', true),
-      highPrioritySourceLimit: getConfig<number>('highPrioritySourceLimit', null),
-      lowPrioritySourceLimit: getConfig<number>('lowPrioritySourceLimit', null),
-      asciiCharactersOnly: getConfig<boolean>('asciiCharactersOnly', false)
-    }
-  }
-
-  public async startCompletion(option: CompleteOption): Promise<void> {
-    this.pretext = byteSlice(option.line, 0, option.colnr - 1)
-    try {
-      await this._doComplete(option)
-    } catch (e) {
-      this.stop()
-      logger.error('Complete error:', e.stack)
-    }
+  public get selectedItem(): DurationCompleteItem | undefined {
+    if (!this.popupEvent) return undefined
+    return this.activeItems[this.popupEvent.index]
   }
 
   /**
-   * Filter or trigger new completion
+   * Configuration for current document
    */
-  private async resumeCompletion(forceRefresh = false): Promise<void> {
-    let { document, complete, pretext } = this
-    let search = this.getResumeInput()
-    if (search == null) {
-      this.stop()
-      return
+  private loadLocalConfig(doc?: Document): void {
+    let suggest = workspace.getConfiguration('suggest', doc)
+    this.config = {
+      autoTrigger: suggest.get<string>('autoTrigger', 'always'),
+      insertMode: suggest.get<InsertMode>('insertMode', InsertMode.Replace),
+      filterGraceful: suggest.get<boolean>('filterGraceful', true),
+      enableFloat: suggest.get<boolean>('enableFloat', true),
+      languageSourcePriority: suggest.get<number>('languageSourcePriority', 99),
+      snippetsSupport: suggest.get<boolean>('snippetsSupport', true),
+      defaultSortMethod: suggest.get<SortMethod>('defaultSortMethod', SortMethod.Length),
+      removeDuplicateItems: suggest.get<boolean>('removeDuplicateItems', false),
+      removeCurrentWord: suggest.get<boolean>('removeCurrentWord', false),
+      acceptSuggestionOnCommitCharacter: suggest.get<boolean>('acceptSuggestionOnCommitCharacter', false),
+      triggerCompletionWait: suggest.get<number>('triggerCompletionWait', 0),
+      triggerAfterInsertEnter: suggest.get<boolean>('triggerAfterInsertEnter', false),
+      maxItemCount: suggest.get<number>('maxCompleteItemCount', 256),
+      timeout: suggest.get<number>('timeout', 500),
+      minTriggerInputLength: suggest.get<number>('minTriggerInputLength', 1),
+      localityBonus: suggest.get<boolean>('localityBonus', true),
+      highPrioritySourceLimit: suggest.get<number>('highPrioritySourceLimit', null),
+      lowPrioritySourceLimit: suggest.get<number>('lowPrioritySourceLimit', null),
+      ignoreRegexps: suggest.get<string[]>('ignoreRegexps', []),
+      asciiMatch: suggest.get<boolean>('asciiMatch', true),
+      asciiCharactersOnly: suggest.get<boolean>('asciiCharactersOnly', false),
     }
-    // not changed
-    if (search == this.input && !forceRefresh) return
-    let disabled = complete.option.disabled
-    let triggerSources = sources.getTriggerSources(pretext, document.filetype, document.uri, disabled)
-    if (search.endsWith(' ') && !triggerSources.length) {
-      this.stop()
-      return
-    }
-    let filteredSources: string[] = []
-    let items: ExtendedCompleteItem[] = []
-    this.input = search
-    if (!complete.isEmpty) {
-      if (complete.isIncomplete) {
-        await document.patchChange(true)
-        items = await complete.completeInComplete(search)
-        if (complete.isCanceled || this.pretext !== pretext) return
-      } else {
-        items = complete.filterResults(search)
-      }
-      items.forEach(item => {
-        // success filter
-        if (!filteredSources.includes(item.source) && item.filterText.toLowerCase().startsWith(search.toLowerCase())) {
-          filteredSources.push(item.source)
-        }
-      })
-    }
-    if (triggerSources.length && !triggerSources.every(s => filteredSources.includes(s.name))) {
-      await this.triggerCompletion(document, this.pretext)
-      return
-    }
-    if (items.length === 0 && !complete.isCompleting) {
-      this.stop()
-      return
-    }
-    await this.showCompletion(complete.option.col, items)
   }
 
-  public hasSelected(): boolean {
-    if (workspace.env.pumevent) return this.selectedItem != null
-    // it's not correct
-    if (!this.config.noselect) return true
-    return false
-  }
-
-  private async showCompletion(col: number, items: ExtendedCompleteItem[]): Promise<void> {
-    let { nvim } = this
-    this.currentSources = this.complete.resultSources
-    let { disableKind, labelMaxLength, disableMenuShortcut, disableMenu } = this.config
-    let preselect = this.config.enablePreselect ? items.findIndex(o => o.preselect) : -1
-    let validKeys = completeItemKeys.slice()
-    if (disableKind) validKeys = validKeys.filter(s => s != 'kind')
-    if (disableMenu) validKeys = validKeys.filter(s => s != 'menu')
-    let vimItems = items.map(item => {
-      let obj = { word: item.word, equal: 1 }
-      for (let key of validKeys) {
-        if (item.hasOwnProperty(key)) {
-          if (disableMenuShortcut && key == 'menu') {
-            obj[key] = item[key].replace(/\[.+\]$/, '')
-          } else if (key == 'abbr' && item[key].length > labelMaxLength) {
-            obj[key] = item[key].slice(0, labelMaxLength)
-          } else {
-            obj[key] = item[key]
-          }
-        }
-      }
-      return obj
+  private loadConfiguration(e?: IConfigurationChangeEvent): CompleteConfig {
+    if (e && !e.affectsConfiguration('suggest')) return
+    if (e) this.pum.reset()
+    let suggest = workspace.initialConfiguration.get('suggest') as any
+    let labels = defaultValue(suggest.completionItemKindLabels, {})
+    this.staticConfig = Object.assign(this.staticConfig ?? {}, {
+      kindMap: createKindMap(labels),
+      defaultKindText: toText(labels['default']),
+      detailField: suggest.detailField,
+      detailMaxLength: toNumber(suggest.detailMaxLength, 100),
+      invalidInsertCharacters: toArray(suggest.invalidInsertCharacters),
+      formatItems: suggest.formatItems,
+      filterOnBackspace: suggest.filterOnBackspace,
+      floatConfig: toObject(suggest.floatConfig),
+      pumFloatConfig: suggest.pumFloatConfig,
+      labelMaxLength: suggest.labelMaxLength,
+      reTriggerAfterIndent: !!suggest.reTriggerAfterIndent,
+      reversePumAboveCursor: !!suggest.reversePumAboveCursor,
+      snippetIndicator: toText(suggest.snippetIndicator),
+      noselect: !!suggest.noselect,
+      enablePreselect: !!suggest.enablePreselect,
+      virtualText: !!suggest.virtualText,
+      selection: suggest.selection
     })
-    nvim.call('coc#_do_complete', [col, vimItems, preselect], true)
+    let doc = workspace.getDocument(workspace.bufnr)
+    this.loadLocalConfig(doc)
   }
 
-  private async _doComplete(option: CompleteOption): Promise<void> {
-    let { source } = option
-    let { nvim, config } = this
-    let doc = workspace.getDocument(option.bufnr)
-    if (!doc?.attached) return
-    // current input
-    this.input = option.input
-    let arr: ISource[] = []
-    if (source == null) {
-      arr = sources.getCompleteSources(option)
-    } else {
-      let s = sources.getSource(source)
-      if (s) arr.push(s)
+  public async startCompletion(opt?: { source?: string }): Promise<void> {
+    clearTimeout(this.triggerTimer)
+    let sourceList: ISource[]
+    if (Is.string(opt.source)) {
+      sourceList = toArray(sources.getSource(opt.source))
     }
-    if (!arr.length) return
-    let [mruItems] = await Promise.all([
-      this.mru.getRecentItems(),
-      doc.patchChange(true),
-    ]) as [MruItem[], undefined]
-    let pre = byteSlice(option.line, 0, option.colnr - 1)
-    // document get changed, not complete
-    if (pre !== this.pretext) return
-    let complete = new Complete(option, doc, config, arr, mruItems, nvim)
-    this.start(complete)
-    // Urgent refresh for complete items
-    let timer = this.completeTimer = setTimeout(async () => {
-      if (complete.isCanceled) return
-      let items = complete.filterResults(option.input)
-      if (items.length === 0) return
-      await this.showCompletion(option.col, items)
-    }, 200)
-    let items = await this.complete.doComplete()
-    this.completeTimer = null
-    clearTimeout(timer)
-    if (complete.isCanceled) return
-    if (items.length == 0) {
-      this.stop()
-      return
-    }
-    let search = this.getResumeInput()
-    if (this.sourcesExists(items)) return
-    if (search == option.input) {
-      await this.showCompletion(option.col, items)
-    } else {
-      await this.resumeCompletion(true)
-    }
+    let bufnr = await this.nvim.call('bufnr', ['%']) as number
+    let doc = workspace.getAttachedDocument(bufnr)
+    let info = await this.nvim.call('coc#util#change_info') as InsertChange
+    info.pre = byteSlice(info.line, 0, info.col - 1)
+    const option = this.getCompleteOption(doc, info, true)
+    await this._startCompletion(option, sourceList)
   }
 
-  /**
-   * Check if soruces of items already shown.
-   */
-  private sourcesExists(items: ExtendedCompleteItem[]): boolean {
-    let { currentSources } = this
-    if (currentSources.length == 0) return items.length == 0
-    let exists = true
-    for (let item of items) {
-      if (!currentSources.includes(item.source)) {
-        exists = false
-        break
-      }
-    }
-    return exists
-  }
-
-  private async onTextChangedP(bufnr: number, info: InsertChange): Promise<void> {
-    let { option } = this
-    if (!option || option.bufnr != bufnr) return
-    if (shouldIndent(option.indentkeys, info.pre)) {
-      logger.debug(`trigger indent by ${info.pre}`)
-      let indentChanged = await this.nvim.call('coc#complete_indent', [])
-      if (indentChanged) {
-        // vim not trigger additional TextChangedP on indent change.
-        await this.nvim.command('redraw')
-        await this.triggerCompletion(this.document, info.pre)
+  private async _startCompletion(option: CompleteOption, sourceList?: ISource[]): Promise<void> {
+    this._debounced.clear()
+    let doc = workspace.getAttachedDocument(option.bufnr)
+    option.filetype = doc.filetype
+    logger.debug('trigger completion with', option)
+    this.stop(true)
+    this.pretext = byteSlice(option.line, 0, option.colnr - 1)
+    sourceList = sourceList ?? sources.getSources(option)
+    if (isFalsyOrEmpty(sourceList)) return
+    let complete = this.complete = new Complete(
+      option,
+      doc,
+      this.config,
+      sourceList)
+    events.completing = true
+    complete.onDidRefresh(async () => {
+      clearTimeout(this.triggerTimer)
+      if (complete.isEmpty) {
+        this.stop(false)
         return
       }
+      if (this.inserted) return
+      await this.filterResults()
+    })
+    let shouldStop = await complete.doComplete()
+    if (shouldStop) this.stop(false)
+  }
+
+  private async onTextChangedP(_bufnr: number, info: InsertChange): Promise<void> {
+    // navigate item or finish completion
+    if (!info.insertChar && this.complete) {
+      this.complete.cancel()
     }
-    if (this.pretext == info.pre) return
-    let pretext = this.pretext = info.pre
-    if (info.pre.match(/^\s*/)[0] !== option.line.match(/^\s*/)[0]) {
-      await this.triggerCompletion(this.document, pretext)
-      return
-    }
-    // Avoid resume when TextChangedP caused by <C-n> or <C-p>
-    if (this.selectedItem && !info.insertChar) {
-      let expected = byteSlice(option.line, 0, option.col) + this.selectedItem.word
-      if (expected == pretext) return
-    }
-    await this.resumeCompletion()
+    this.pretext = info.pre
   }
 
   private async onTextChangedI(bufnr: number, info: InsertChange): Promise<void> {
-    let { nvim, option } = this
-    let doc = workspace.getDocument(bufnr)
-    if (!doc) return
+    const doc = workspace.getDocument(bufnr)
+    if (!doc || !doc.attached) return
+    const { option } = this
+    const filterOnBackspace = this.staticConfig.filterOnBackspace
+    if (option != null) {
+      // detect item word insert
+      if (!info.insertChar) {
+        let pre = byteSlice(option.line, 0, option.col)
+        if (this.selectedItem) {
+          let { word, startcol } = this.popupEvent
+          if (byteSlice(option.line, 0, startcol) + word == info.pre) {
+            this.pretext = info.pre
+            return
+          }
+        } else if (pre + this.pum.search == info.pre) {
+          return
+        }
+      }
+      // retrigger after indent
+      if (this.staticConfig.reTriggerAfterIndent && info.pre.match(/^\s*/)[0] !== option.line.match(/^\s*/)[0]) {
+        await this.triggerCompletion(doc, info)
+        return
+      }
+      if (shouldStop(bufnr, info, option) || (filterOnBackspace === false && info.pre.length < this.pretext.length)) {
+        this.stop(true)
+      }
+    }
+    if (info.pre === this.pretext) return
+    clearTimeout(this.triggerTimer)
     let pretext = this.pretext = info.pre
-    // try trigger on character type
-    if (!this.activated) {
-      if (!info.insertChar) return
-      if (sources.shouldTrigger(pretext, doc.filetype, doc.uri)) {
-        await this.triggerCompletion(doc, pretext)
-        return
-      }
-      this.triggerTimer = setTimeout(async () => {
-        if (this.activated) return
-        await this.triggerCompletion(doc, pretext)
-      }, this.config.triggerCompletionWait)
-      return
-    }
-    // Ignore change with other buffer
-    if (!option || bufnr != option.bufnr) return
-    if (option.linenr != info.lnum || option.col >= info.col - 1) {
-      this.stop()
-      return
-    }
-    // Completion canceled by <C-e> or text changed by backspace.
     if (!info.insertChar) {
-      this.stop()
+      if (this.complete) await this.filterResults()
       return
     }
-    // Check commit character
-    if (pretext && Is.vimCompleteItem(this.previousItem) && this.config.acceptSuggestionOnCommitCharacter) {
-      let resolvedItem = this.getCompleteItem(this.previousItem)
-      let last = pretext[pretext.length - 1]
-      if (sources.shouldCommit(resolvedItem, last)) {
-        let { linenr, col, line, colnr } = this.option
-        this.stop()
-        let { word } = resolvedItem
-        let newLine = `${line.slice(0, col)}${word}${info.insertChar}${line.slice(colnr - 1)}`
-        await nvim.call('coc#util#setline', [linenr, newLine])
-        let curcol = col + word.length + 2
-        await nvim.call('cursor', [linenr, curcol])
-        await doc.patchChange()
+    // check commit
+    if (this.config.acceptSuggestionOnCommitCharacter && this.selectedItem) {
+      let last = pretext.slice(-1)
+      let resolvedItem = this.selectedItem
+      let result = this.complete.resolveItem(resolvedItem)
+      if (result && sources.shouldCommit(result.source, result.item, last)) {
+        logger.debug('commit by commit character.')
+        let startcol = byteIndex(this.option.line, resolvedItem.character) + 1
+        this.stop(true)
+        this.nvim.call('coc#pum#replace', [startcol, resolvedItem.word + info.insertChar], true)
         return
       }
     }
-    await this.resumeCompletion()
-  }
-
-  private async triggerCompletion(doc: Document, pre: string): Promise<void> {
-    if (!doc?.attached || this.triggering) return
-    // check trigger
-    let shouldTrigger = this.shouldTrigger(doc, pre)
-    if (!shouldTrigger) return
-    this.triggering = true
-    let option = await this.nvim.call('coc#util#get_complete_option') as CompleteOption
-    this.triggering = false
-    if (!option) {
-      logger.warn(`Completion of ${doc.bufnr} disabled by b:coc_suggest_disable`)
-      return
-    }
-    // could be changed by indent
-    pre = byteSlice(option.line, 0, option.colnr - 1)
-    if (option.blacklist && option.blacklist.includes(option.input)) {
-      logger.warn(`Suggest disabled by b:coc_suggest_blacklist`, option.blacklist)
-      return
-    }
-    if (option.input && this.config.asciiCharactersOnly) {
-      option.input = this.getInput(doc, pre)
-      option.col = byteLength(pre) - byteLength(option.input)
-    }
-    if (pre.length) {
-      option.triggerCharacter = pre.slice(-1)
-    }
-    option.filetype = doc.filetype
-    logger.debug('trigger completion with', option)
-    await this.startCompletion(option)
-  }
-
-  private async onCompleteDone(item: VimCompleteItem): Promise<void> {
-    let { document } = this
-    if (!document || !Is.vimCompleteItem(item)) return
-    let opt = Object.assign({}, this.option)
-    let resolvedItem = this.getCompleteItem(item)
-    this.stop()
-    if (!resolvedItem) return
-    let insertChange = await waitTextChangedI()
-    if (!insertChange) return
-    if (insertChange.lnum != opt.linenr || insertChange.pre !== byteSlice(opt.line, 0, opt.col) + item.word) return
-    let res = await events.race(['InsertCharPre'], 20)
-    if (res) return
-    let source = new CancellationTokenSource()
-    let { token } = source
-    this.mru.add(this.input, resolvedItem)
-    await this.doCompleteResolve(resolvedItem, source)
-    if (token.isCancellationRequested) return
-    await document.patchChange(true)
-    await this.doCompleteDone(resolvedItem, opt)
-  }
-
-  private doCompleteResolve(item: ExtendedCompleteItem, tokenSource: CancellationTokenSource): Promise<void> {
-    let source = sources.getSource(item.source)
-    return new Promise<void>(resolve => {
-      if (source && typeof source.onCompleteResolve == 'function') {
-        let timer = setTimeout(() => {
-          tokenSource.cancel()
-          logger.warn(`Resolve timeout after 500ms: ${source.name}`)
-          resolve()
-        }, 500)
-        Promise.resolve(source.onCompleteResolve(item, tokenSource.token)).then(() => {
-          clearTimeout(timer)
-          resolve()
-        }, e => {
-          logger.error(`Error on complete resolve: ${e.message}`, e)
-          clearTimeout(timer)
-          resolve()
-        })
-      } else {
-        resolve()
+    // trigger character
+    if (!doc.chars.isKeywordChar(info.insertChar)) {
+      let triggerSources = this.getTriggerSources(doc, pretext)
+      if (triggerSources.length > 0) {
+        await this.triggerCompletion(doc, info, triggerSources)
+        return
       }
-    })
+    }
+    // trigger by normal character
+    if (!this.complete) {
+      await this.triggerCompletion(doc, info)
+      return
+    }
+    if (this.complete.isEmpty) {
+      // triggering without results
+      this.triggerTimer = setTimeout(async () => {
+        await this.triggerCompletion(doc, info)
+      }, TRIGGER_TIMEOUT)
+      return
+    }
+    await this.filterResults(info)
   }
 
-  public async doCompleteDone(item: ExtendedCompleteItem, opt: CompleteOption): Promise<void> {
-    let data = JSON.parse(item.user_data)
-    let source = sources.getSource(data.source)
-    if (source && typeof source.onCompleteDone === 'function') {
-      await Promise.resolve(source.onCompleteDone(item, opt))
+  private getTriggerSources(doc: Document, pretext: string): ISource[] {
+    let disabled = doc.getVar('disabled_sources', [])
+    if (this.config.autoTrigger === 'none') return []
+    return sources.getTriggerSources(pretext, doc.filetype, doc.uri, disabled)
+  }
+
+  private async triggerCompletion(doc: Document, info: InsertChange, sources?: ISource[]): Promise<boolean> {
+    let { minTriggerInputLength, autoTrigger } = this.config
+    let { pre } = info
+    // check trigger
+    if (autoTrigger === 'none') return false
+    if (!sources && !this.shouldTrigger(doc, pre)) return false
+    const option = this.getCompleteOption(doc, info)
+    if (sources == null && option.input.length < minTriggerInputLength) {
+      logger.trace(`Suggest not triggered with input "${option.input}", minimal trigger input length: ${minTriggerInputLength}`)
+      return false
     }
+    if (checkIgnoreRegexps(this.config.ignoreRegexps, option.input)) return false
+    await this._startCompletion(option, sources)
+    return true
+  }
+
+  private getCompleteOption(doc: Document, info: InsertChange, manual = false): CompleteOption {
+    let { pre } = info
+    let input = getInput(doc.chars, info.pre, this.config.asciiCharactersOnly)
+    let followWord = doc.getStartWord(info.line.slice(info.pre.length))
+    return {
+      input,
+      position: Position.create(info.lnum - 1, info.pre.length),
+      line: info.line,
+      followWord,
+      filetype: doc.filetype,
+      linenr: info.lnum,
+      col: info.col - 1 - byteLength(input),
+      colnr: info.col,
+      bufnr: doc.bufnr,
+      word: input + followWord,
+      changedtick: info.changedtick,
+      synname: '',
+      filepath: doc.schema === 'file' ? URI.parse(doc.uri).fsPath : '',
+      triggerCharacter: manual ? undefined : toText(pre[pre.length - 1])
+    }
+  }
+
+  public stop(close: boolean, kind: CompleteFinishKind = CompleteFinishKind.Normal): void {
+    void this.stopAwaitable(close, kind)
+  }
+
+  public async stopAwaitable(close: boolean, kind: CompleteFinishKind = CompleteFinishKind.Normal): Promise<void> {
+    let { complete } = this
+    if (complete == null) return
+    let inserted = kind === CompleteFinishKind.Confirm || (this.popupEvent?.inserted && kind != CompleteFinishKind.Cancel)
+    let item = this.selectedItem
+    let character = item?.character
+    let resolved = complete.resolveItem(item)
+    let option = complete.option
+    let input = complete.input
+    let doc = workspace.getDocument(option.bufnr)
+    let line = option.line
+    let inputStart = characterIndex(line, option.col)
+    events.completing = false
+    this.cancel()
+    doc._forceSync()
+    const completeDone = events.fire('CompleteDone', [toCompleteDoneItem(item, resolved?.item)])
+    if (close) this.nvim.call('coc#pum#_close', [], true)
+    if (resolved && inserted) {
+      this._mru.add(line.slice(character, inputStart) + input, item)
+    }
+    let confirmDone = Promise.resolve()
+    if (kind == CompleteFinishKind.Confirm && resolved) {
+      confirmDone = this.confirmCompletion(resolved.source, resolved.item, option)
+    }
+    await Promise.all([completeDone, confirmDone])
+  }
+
+  private async confirmCompletion(source: ISource, item: CompleteItem, option: CompleteOption): Promise<void> {
+    await this.floating.resolveItem(source, item, option, false)
+    if (!Is.func(source.onCompleteDone)) return
+    let { insertMode, snippetsSupport } = this.config
+    let opt: CompleteDoneOption = Object.assign({ insertMode, snippetsSupport }, option)
+    await Promise.resolve(source.onCompleteDone(item, opt))
   }
 
   private async onInsertEnter(bufnr: number): Promise<void> {
     if (!this.config.triggerAfterInsertEnter || this.config.autoTrigger !== 'always') return
-    let pre = await this.nvim.eval(`strpart(getline('.'), 0, col('.') - 1)`) as string
-    if (!pre) return
     let doc = workspace.getDocument(bufnr)
-    await this.triggerCompletion(doc, pre)
+    if (!doc || !doc.attached) return
+    let change = await this.nvim.call('coc#util#change_info') as InsertChange
+    change.pre = byteSlice(change.line, 0, change.col - 1)
+    await this.triggerCompletion(doc, change)
   }
 
   public shouldTrigger(doc: Document, pre: string): boolean {
-    let { autoTrigger, asciiCharactersOnly, minTriggerInputLength } = this.config
+    let { autoTrigger } = this.config
     if (autoTrigger == 'none') return false
     if (sources.shouldTrigger(pre, doc.filetype, doc.uri)) return true
     if (autoTrigger !== 'always') return false
-    let last = pre.slice(-1)
-    // eslint-disable-next-line no-control-regex
-    if (asciiCharactersOnly && !/[\x00-\x7F]/.test(last)) {
-      return false
-    }
-    if (last && (doc.isWord(last) || last.codePointAt(0) > 255)) {
-      if (minTriggerInputLength == 1) return true
-      let input = this.getInput(doc, pre)
-      return input.length >= minTriggerInputLength
-    }
-    return false
+    return true
   }
 
-  private async onPumChange(): Promise<void> {
-    if (!this.popupEvent) return
-    let { col, row, height, width, scrollbar } = this.popupEvent
-    let bounding: PumBounding = { col, row, height, width, scrollbar }
-    let resolvedItem = this.getCompleteItem(this.selectedItem)
-    if (!resolvedItem) return
-    let source = this.resolveTokenSource = new CancellationTokenSource()
-    let { token } = source
-    await this.doCompleteResolve(resolvedItem, source)
-    if (token.isCancellationRequested) return
-    let docs = resolvedItem.documentation
-    if (!docs && resolvedItem.info) {
-      let { info } = resolvedItem
-      let isText = /^[\w-\s.,\t]+$/.test(info)
-      docs = [{ filetype: isText ? 'txt' : this.document.filetype, content: info }]
+  private async filterResults(info?: InsertChange): Promise<void> {
+    let { complete, option, pretext } = this
+    let search = getResumeInput(option, pretext)
+    if (search == null) {
+      this.stop(true)
+      return
     }
-    if (!this.config.floatEnable) return
-    if (!docs || docs.length == 0) {
-      this.floating.close()
-    } else {
-      let excludeImages = workspace.getConfiguration('coc.preferences').get<boolean>('excludeImageLinksInMarkdownDocument')
-      let config = Object.assign({}, this.config.floatConfig, { excludeImages })
-      await this.floating.show(docs, bounding, config)
+    let items = await complete.filterResults(search)
+    // cancelled or have inserted text
+    if (items === undefined || !this.option) return
+    let doc = workspace.getDocument(option.bufnr)
+    // trigger completion when trigger source available
+    if (info && info.insertChar && items.length == 0) {
+      let triggerSources = this.getTriggerSources(doc, pretext)
+      if (triggerSources.length > 0) {
+        await this.triggerCompletion(doc, info, triggerSources)
+        return
+      }
     }
+    if (items.length == 0) {
+      let last = search.slice(-1)
+      if (!complete.isCompleting || last.length === 0 || !doc.chars.isKeywordChar(last)) {
+        this.stop(true)
+      }
+      return
+    }
+    this.activeItems = items
+    this.pum.show(items, search, this.option)
   }
 
-  public start(complete: Complete): void {
-    let { activated } = this
-    this.activated = true
-    this.currentSources = []
-    if (activated) {
-      this.complete.dispose()
-    }
-    this.complete = complete
-    if (!this.config.keepCompleteopt) {
-      this.nvim.command(`noa set completeopt=${this.completeOpt}`, true)
-    }
-  }
-
-  private cancelResolve(): void {
-    if (this.resolveTokenSource) {
-      this.resolveTokenSource.cancel()
-      this.resolveTokenSource.dispose()
-      this.resolveTokenSource = null
-    }
-  }
-
-  public stop(): void {
-    let { nvim } = this
-    if (!this.activated) return
-    this.cancelResolve()
-    this.floating.close()
-    this.activated = false
-    this.pretext = undefined
-    if (this.completeTimer) {
-      clearTimeout(this.completeTimer)
-      this.completeTimer = null
-    }
-    if (this.complete) {
+  public cancel(): void {
+    if (this.complete != null) {
       this.complete.dispose()
       this.complete = null
     }
-    nvim.pauseNotification()
-    if (events.pumvisible) nvim.call('coc#_hide', [], true)
-    if (!this.config.keepCompleteopt) {
-      nvim.command(`noa set completeopt=${workspace.completeOpt}`, true)
-    }
-    nvim.command(`let g:coc#_context = {'start': 0, 'preselect': -1,'candidates': []}`, true)
-    void nvim.resumeNotification(false, true)
-  }
-
-  public reset(): void {
-    if (this.triggerTimer) {
+    if (this.triggerTimer != null) {
       clearTimeout(this.triggerTimer)
+      this.triggerTimer = null
     }
-    this.stop()
-  }
-
-  private getInput(document: Document, pre: string): string {
-    let { asciiCharactersOnly } = this.config
-    let input = ''
-    for (let i = pre.length - 1; i >= 0; i--) {
-      let ch = i == 0 ? null : pre[i - 1]
-      // eslint-disable-next-line no-control-regex
-      if (!ch || !document.isWord(ch) || (asciiCharactersOnly && !/[\x00-\x7F]/.test(ch))) {
-        input = pre.slice(i, pre.length)
-        break
-      }
-    }
-    return input
-  }
-
-  public getResumeInput(): string {
-    let { option, pretext, document } = this
-    if (!option || !document) return null
-    if (events.cursor && option.linenr != events.cursor.lnum) return null
-    let buf = Buffer.from(pretext, 'utf8')
-    if (buf.length < option.col) return null
-    let input = buf.slice(option.col).toString('utf8')
-    if (option.blacklist && option.blacklist.includes(input)) return null
-    return input
-  }
-
-  private get completeOpt(): string {
-    let { noselect, enablePreview } = this.config
-    let preview = enablePreview && !workspace.env.pumevent ? ',preview' : ''
-    if (noselect) return `noselect,menuone${preview}`
-    return `noinsert,menuone${preview}`
-  }
-
-  private getCompleteItem(item: VimCompleteItem | {} | null): ExtendedCompleteItem | null {
-    if (!this.complete || !Is.vimCompleteItem(item)) return null
-    return this.complete.resolveCompletionItem(item)
+    this.pretext = undefined
+    this.activeItems = []
+    this.popupEvent = undefined
   }
 
   public dispose(): void {
-    this.cancelResolve()
-    if (this.triggerTimer) {
-      clearTimeout(this.triggerTimer)
-    }
     disposeAll(this.disposables)
   }
 }

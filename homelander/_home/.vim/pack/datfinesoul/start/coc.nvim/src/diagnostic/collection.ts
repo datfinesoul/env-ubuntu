@@ -1,8 +1,10 @@
-import { Diagnostic, DiagnosticSeverity, DiagnosticTag, Emitter, Event, Range } from 'vscode-languageserver-protocol'
+'use strict'
+import { Diagnostic, DiagnosticSeverity, DiagnosticTag, Range } from 'vscode-languageserver-types'
 import { URI } from 'vscode-uri'
+import { intersect } from '../util/array'
+import { Emitter, Event } from '../util/protocol'
 import workspace from '../workspace'
-const logger = require('../util/logger')('diagnostic-collection')
-const knownTags = [DiagnosticTag.Deprecated, DiagnosticTag.Unnecessary]
+const HintTags = [DiagnosticTag.Deprecated, DiagnosticTag.Unnecessary]
 
 export default class DiagnosticCollection {
   private diagnosticsMap: Map<string, Diagnostic[]> = new Map()
@@ -41,10 +43,10 @@ export default class DiagnosticCollection {
       uri = URI.parse(uri).toString()
       diagnostics.forEach(o => {
         // should be message for the file, but we need range
-        o.range = o.range || Range.create(0, 0, 0, 0)
-        o.message = o.message || ''
+        o.range = o.range ?? Range.create(0, 0, 0, 0)
+        o.message = o.message ?? ''
         o.source = o.source || this.name
-        if (Array.isArray(o.tags) && o.tags.some(t => knownTags.includes(t))) {
+        if (!o.severity && Array.isArray(o.tags) && intersect(o.tags, HintTags)) {
           o.severity = DiagnosticSeverity.Hint
         }
       })
@@ -72,6 +74,10 @@ export default class DiagnosticCollection {
       let diagnostics = this.diagnosticsMap.get(uri)
       callback.call(thisArg, uri, diagnostics, this)
     }
+  }
+
+  public entries(): IterableIterator<[string, Diagnostic[]]> {
+    return this.diagnosticsMap.entries()
   }
 
   public get(uri: string): Diagnostic[] {

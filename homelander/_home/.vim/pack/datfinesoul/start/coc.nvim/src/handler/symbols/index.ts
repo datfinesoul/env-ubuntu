@@ -1,14 +1,18 @@
-import { Neovim } from '@chemzqm/neovim'
-import { CancellationTokenSource, Disposable, Range, SymbolInformation } from 'vscode-languageserver-protocol'
+'use strict'
+import { Neovim } from '../../neovim'
+import { Position, Range, WorkspaceSymbol } from 'vscode-languageserver-types'
 import events from '../../events'
-import languages from '../../languages'
+import languages, { ProviderName } from '../../languages'
 import BufferSync from '../../model/bufferSync'
-import { HandlerDelegate } from '../../types'
-import { disposeAll, wait } from '../../util/index'
+import { disposeAll, getConditionValue } from '../../util/index'
+import { debounce } from '../../util/node'
 import { equals } from '../../util/object'
 import { positionInRange, rangeInRange } from '../../util/position'
+import { CancellationTokenSource, Disposable } from '../../util/protocol'
+import { characterIndex } from '../../util/string'
 import window from '../../window'
 import workspace from '../../workspace'
+import { HandlerDelegate } from '../types'
 import SymbolsBuffer from './buffer'
 import Outline from './outline'
 import { convertSymbols, SymbolInfo } from './util'
@@ -24,27 +28,39 @@ export default class Symbols {
     private handler: HandlerDelegate
   ) {
     this.buffers = workspace.registerBufferSync(doc => {
-      if (doc.buftype != '') return undefined
-      let buf = new SymbolsBuffer(doc.bufnr, this.autoUpdateBufnrs)
+      let { bufnr } = doc
+      let buf = new SymbolsBuffer(doc, this.autoUpdateBufnrs)
       buf.onDidUpdate(symbols => {
         if (!this.outline) return
-        this.outline.onSymbolsUpdate(buf.bufnr, symbols)
+        this.outline.onSymbolsUpdate(bufnr, symbols)
       })
       return buf
     })
     this.outline = new Outline(nvim, this.buffers, handler)
-    events.on('CursorHold', async (bufnr: number) => {
-      if (!this.functionUpdate || !this.buffers.getItem(bufnr)) return
-      await this.getCurrentFunctionSymbol(bufnr)
-    }, null, this.disposables)
+    const debounceTime = workspace.initialConfiguration.get<number>('coc.preferences.currentFunctionSymbolDebounceTime', 300)
+    let debounced = debounce(async (bufnr: number, cursor: [number, number]) => {
+      if (!this.buffers.getItem(bufnr) || !this.autoUpdate(bufnr)) return
+      let doc = workspace.getDocument(bufnr)
+      let character = characterIndex(doc.getline(cursor[0] - 1), cursor[1] - 1)
+      let pos = Position.create(cursor[0] - 1, character)
+      let func = await this.getFunctionSymbol(bufnr, pos)
+      let buffer = nvim.createBuffer(bufnr)
+      buffer.setVar('coc_current_function', func ?? '', true)
+      this.nvim.call('coc#util#do_autocmd', ['CocStatusChange'], true)
+    }, getConditionValue(debounceTime, 0))
+    events.on('CursorMoved', debounced, this, this.disposables)
+    this.disposables.push(Disposable.create(() => {
+      debounced.clear()
+    }))
     events.on('InsertEnter', (bufnr: number) => {
       let buf = this.buffers.getItem(bufnr)
       if (buf) buf.cancel()
     }, null, this.disposables)
   }
 
-  public get functionUpdate(): boolean {
-    let config = workspace.getConfiguration('coc.preferences')
+  public autoUpdate(bufnr: number): boolean {
+    let doc = workspace.getDocument(bufnr)
+    let config = workspace.getConfiguration('coc.preferences', doc)
     return config.get<boolean>('currentFunctionSymbolAutoUpdate', false)
   }
 
@@ -52,13 +68,13 @@ export default class Symbols {
     return workspace.getConfiguration('suggest').get<any>('completionItemKindLabels', {})
   }
 
-  public async getWorkspaceSymbols(input: string): Promise<SymbolInformation[]> {
-    this.handler.checkProvier('workspaceSymbols', null)
+  public async getWorkspaceSymbols(input: string): Promise<WorkspaceSymbol[]> {
+    this.handler.checkProvider(ProviderName.WorkspaceSymbols, null)
     let tokenSource = new CancellationTokenSource()
     return await languages.getWorkspaceSymbols(input, tokenSource.token)
   }
 
-  public async resolveWorkspaceSymbol(symbolInfo: SymbolInformation): Promise<SymbolInformation> {
+  public async resolveWorkspaceSymbol(symbolInfo: WorkspaceSymbol): Promise<WorkspaceSymbol> {
     if (symbolInfo.location?.uri) return symbolInfo
     let tokenSource = new CancellationTokenSource()
     return await languages.resolveWorkspaceSymbol(symbolInfo, tokenSource.token)
@@ -66,10 +82,9 @@ export default class Symbols {
 
   public async getDocumentSymbols(bufnr?: number): Promise<SymbolInfo[] | undefined> {
     if (!bufnr) {
-      let doc = await workspace.document
-      if (doc.isCommandLine || !doc.attached) return undefined
-      await wait(1)
-      bufnr = doc.bufnr
+      bufnr = await this.nvim.call('bufnr', ['%']) as number
+      let doc = workspace.getDocument(bufnr)
+      if (!doc || !doc.attached) return undefined
     }
     let buf = this.buffers.getItem(bufnr)
     if (!buf) return
@@ -77,12 +92,7 @@ export default class Symbols {
     return res ? convertSymbols(res) : undefined
   }
 
-  public async getCurrentFunctionSymbol(bufnr?: number): Promise<string> {
-    if (!bufnr) bufnr = await this.nvim.call('bufnr', ['%'])
-    let doc = workspace.getDocument(bufnr)
-    if (!doc || !doc.attached) return
-    if (!languages.hasProvider('documentSymbol', doc.textDocument)) return
-    let position = await window.getCursorPosition()
+  public async getFunctionSymbol(bufnr: number, position: Position): Promise<string> {
     let symbols = await this.getDocumentSymbols(bufnr)
     let buffer = this.nvim.createBuffer(bufnr)
     if (!symbols || symbols.length === 0) {
@@ -97,21 +107,26 @@ export default class Symbols {
       'Struct',
     ].includes(s.kind))
     let functionName = ''
+    let labels = this.labels
     for (let sym of symbols.reverse()) {
       if (sym.range
         && positionInRange(position, sym.range) == 0
         && !sym.text.endsWith(') callback')) {
         functionName = sym.text
-        let label = this.labels[sym.kind.toLowerCase()]
+        let label = labels[sym.kind.toLowerCase()]
         if (label) functionName = `${label} ${functionName}`
         break
       }
     }
-    if (this.functionUpdate) {
-      buffer.setVar('coc_current_function', functionName, true)
-      this.nvim.call('coc#util#do_autocmd', ['CocStatusChange'], true)
-    }
     return functionName
+  }
+
+  public async getCurrentFunctionSymbol(): Promise<string> {
+    let bufnr = await this.nvim.call('bufnr', ['%']) as number
+    let doc = workspace.getDocument(bufnr)
+    if (!doc || !doc.attached || !languages.hasProvider(ProviderName.DocumentSymbol, doc.textDocument)) return
+    let position = await window.getCursorPosition()
+    return await this.getFunctionSymbol(bufnr, position)
   }
 
   /*
@@ -119,7 +134,7 @@ export default class Symbols {
    */
   public async selectSymbolRange(inner: boolean, visualmode: string, supportedSymbols: string[]): Promise<void> {
     let { doc } = await this.handler.getCurrentState()
-    this.handler.checkProvier('documentSymbol', doc.textDocument)
+    this.handler.checkProvider(ProviderName.DocumentSymbol, doc.textDocument)
     let range: Range
     if (visualmode) {
       range = await window.getSelectedRange(visualmode)
@@ -129,7 +144,7 @@ export default class Symbols {
     }
     let symbols = await this.getDocumentSymbols(doc.bufnr)
     if (!symbols || symbols.length === 0) {
-      window.showMessage('No symbols found', 'warning')
+      void window.showWarningMessage('No symbols found')
       return
     }
     symbols = symbols.filter(s => supportedSymbols.includes(s.kind))
@@ -143,8 +158,12 @@ export default class Symbols {
     if (inner && selectRange) {
       let { start, end } = selectRange
       let line = doc.getline(start.line + 1)
-      let endLine = doc.getline(end.line - 1)
-      selectRange = Range.create(start.line + 1, line.match(/^\s*/)[0].length, end.line - 1, endLine.length)
+      // https://github.com/neoclide/coc.nvim/issues/1847
+      // https://github.com/neoclide/coc.nvim/pull/4488#issuecomment-1409717682
+      // don't decrease end.line for python
+      let endDelta = doc.filetype === 'python' ? 0 : 1
+      let endLine = doc.getline(end.line - endDelta)
+      selectRange = Range.create(start.line + 1, line.match(/^\s*/)[0].length, end.line - endDelta, endLine.length)
     }
     if (selectRange) {
       await window.selectRange(selectRange)

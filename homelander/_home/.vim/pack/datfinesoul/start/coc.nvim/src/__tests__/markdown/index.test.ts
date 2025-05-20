@@ -1,45 +1,52 @@
-import { getHighlightItems, parseMarkdown, parseDocuments } from '../../markdown/index'
+import { getHighlightItems, toFiletype, parseMarkdown, parseDocuments } from '../../markdown/index'
 import { Documentation } from '../../types'
 
 describe('getHighlightItems', () => {
-  it('should get highlights in single line', async () => {
+  it('should convert filetype', () => {
+    expect(toFiletype(undefined)).toBe('txt')
+    expect(toFiletype('ts')).toBe('typescript')
+    expect(toFiletype('js')).toBe('javascript')
+    expect(toFiletype('bash')).toBe('sh')
+  })
+
+  it('should get highlights in single line', () => {
     let res = getHighlightItems('this line has highlights', 0, [10, 15])
     expect(res).toEqual([{
       colStart: 10,
       colEnd: 15,
       lnum: 0,
-      hlGroup: 'CocUnderline'
+      hlGroup: 'CocFloatActive'
     }])
   })
 
-  it('should get highlights when active end extended', async () => {
+  it('should get highlights when active end extended', () => {
     let res = getHighlightItems('this line', 0, [5, 30])
     expect(res).toEqual([{
       colStart: 5,
       colEnd: 9,
       lnum: 0,
-      hlGroup: 'CocUnderline'
+      hlGroup: 'CocFloatActive'
     }])
   })
 
-  it('should get highlights across line', async () => {
+  it('should get highlights across line', () => {
     let res = getHighlightItems('this line\nhas highlights', 0, [5, 15])
     expect(res).toEqual([{
-      colStart: 5, colEnd: 9, lnum: 0, hlGroup: 'CocUnderline'
+      colStart: 5, colEnd: 9, lnum: 0, hlGroup: 'CocFloatActive'
     }, {
-      colStart: 0, colEnd: 5, lnum: 1, hlGroup: 'CocUnderline'
+      colStart: 0, colEnd: 5, lnum: 1, hlGroup: 'CocFloatActive'
     }])
     res = getHighlightItems('a\nb\nc\nd', 0, [2, 5])
     expect(res).toEqual([
-      { colStart: 0, colEnd: 1, lnum: 1, hlGroup: 'CocUnderline' },
-      { colStart: 0, colEnd: 1, lnum: 2, hlGroup: 'CocUnderline' },
-      { colStart: 0, colEnd: 0, lnum: 3, hlGroup: 'CocUnderline' }
+      { colStart: 0, colEnd: 1, lnum: 1, hlGroup: 'CocFloatActive' },
+      { colStart: 0, colEnd: 1, lnum: 2, hlGroup: 'CocFloatActive' },
+      { colStart: 0, colEnd: 0, lnum: 3, hlGroup: 'CocFloatActive' }
     ])
   })
 })
 
 describe('parseMarkdown', () => {
-  it('should parse code blocks', async () => {
+  it('should parse code blocks', () => {
     let content = `
 \`\`\`js
 var global = globalThis
@@ -66,7 +73,7 @@ if
     ])
   })
 
-  it('should merge empty lines', async () => {
+  it('should merge empty lines', () => {
     let content = `
 ![img](http://img.io)
 ![img](http://img.io)
@@ -81,7 +88,7 @@ if
     ])
   })
 
-  it('should parse html code block', async () => {
+  it('should parse html code block', () => {
     let content = `
 example:
 \`\`\`html
@@ -89,17 +96,36 @@ example:
 \`\`\`
     `
     let res = parseMarkdown(content, {})
-    expect(res.lines).toEqual(['example:', '', '<div>code</div>'])
-    expect(res.codes).toEqual([{ filetype: 'html', startLine: 2, endLine: 3 }])
+    expect(res.lines).toEqual(['example:', '<div>code</div>'])
+    expect(res.codes).toEqual([{ filetype: 'html', startLine: 1, endLine: 2 }])
   })
 
-  it('should compose empty lines', async () => {
+  it('should merge empty lines', async () => {
+    let content = `
+https://baidu.com/%25E0%25A4%25A
+foo
+
+
+
+bar
+ `
+    let res = parseMarkdown(content, {})
+    expect(res.lines).toEqual(['foo', '', 'bar'])
+  })
+
+  it('should compose empty lines', () => {
     let content = 'foo\n\n\nbar\n\n\n'
     let res = parseMarkdown(content, {})
     expect(res.lines).toEqual(['foo', '', 'bar'])
   })
 
-  it('should parse ansi highlights', async () => {
+  it('should merge lines', () => {
+    let content = 'first\nsecond'
+    let res = parseMarkdown(content, {})
+    expect(res.lines).toEqual(['first', 'second'])
+  })
+
+  it('should parse ansi highlights', () => {
     let content = '__foo__\n[link](link)'
     let res = parseMarkdown(content, {})
     expect(res.lines).toEqual(['foo', 'link'])
@@ -109,22 +135,22 @@ example:
     ])
   })
 
-  it('should exclude images by option', async () => {
+  it('should exclude images by option', () => {
     let content = 'head\n![img](img)\ncontent ![img](img) ![img](img)'
     let res = parseMarkdown(content, { excludeImages: false })
-    expect(res.lines).toEqual(['head', '![img](img)', '', 'content ![img](img)', ' ![img](img)'])
+    expect(res.lines).toEqual(['head', '![img](img)', 'content ![img](img) ![img](img)'])
     content = 'head\n![img](img)\ncontent ![img](img) ![img](img)'
     res = parseMarkdown(content, { excludeImages: true })
-    expect(res.lines).toEqual(['head', '', 'content'])
+    expect(res.lines).toEqual(['head', 'content'])
   })
 
-  it('should render hr', async () => {
+  it('should render hr', () => {
     let content = 'foo\n***\nbar'
     let res = parseMarkdown(content, {})
-    expect(res.lines).toEqual(['foo', '', '───', 'bar'])
+    expect(res.lines).toEqual(['foo', '───', 'bar'])
   })
 
-  it('should render deleted text', async () => {
+  it('should render deleted text', () => {
     let content = '~foo~'
     let res = parseMarkdown(content, {})
     expect(res.highlights).toEqual([
@@ -132,13 +158,13 @@ example:
     ])
   })
 
-  it('should render br', async () => {
+  it('should render br', () => {
     let content = 'a  \nb'
     let res = parseMarkdown(content, {})
     expect(res.lines).toEqual(['a', 'b'])
   })
 
-  it('should render code span', async () => {
+  it('should render code span', () => {
     let content = '`foo`'
     let res = parseMarkdown(content, {})
     expect(res.highlights).toEqual([
@@ -146,13 +172,13 @@ example:
     ])
   })
 
-  it('should render html', async () => {
+  it('should render html', () => {
     let content = '<div>foo</div>'
     let res = parseMarkdown(content, {})
     expect(res.lines).toEqual(['foo'])
   })
 
-  it('should render checkbox', async () => {
+  it('should render checkbox', () => {
     let content = '- [x] first\n- [ ] second'
     let res = parseMarkdown(content, {})
     expect(res.lines).toEqual([
@@ -160,7 +186,7 @@ example:
     ])
   })
 
-  it('should render numbered list', async () => {
+  it('should render numbered list', () => {
     let content = '1. one\n2. two\n3. three'
     let res = parseMarkdown(content, {})
     expect(res.lines).toEqual([
@@ -168,17 +194,61 @@ example:
     ])
   })
 
-  it('should render nested list', async () => {
+  it('should render nested list', () => {
     let content = '- foo\n- bar\n    - one\n    - two'
     let res = parseMarkdown(content, {})
     expect(res.lines).toEqual([
       '  * foo', '  * bar', '    * one', '    * two'
     ])
   })
+
+  it('should render complicated nested list', () => {
+    let content = `
+- greeting
+  - hello
+    - me
+      you
+      them
+  - hi
+    - me
+      you
+      them
+    - him
+      her
+- bye
+- code
+
+  \`\`\`typescript
+  function foo () {
+          console.log('foo')
+    console.log('bar')
+  }
+  \`\`\`
+`
+    let res = parseMarkdown(content, {})
+    expect(res.lines).toEqual(
+`  * greeting
+    * hello
+      * me
+        you
+        them
+    * hi
+      * me
+        you
+        them
+      * him
+        her
+  * bye
+  * code
+    function foo () {
+            console.log('foo')
+      console.log('bar')
+    }`.split('\n'))
+  })
 })
 
 describe('parseDocuments', () => {
-  it('should parse documents with diagnostic filetypes', async () => {
+  it('should parse documents with diagnostic filetypes', () => {
     let docs = [{
       filetype: 'Error',
       content: 'Error text'
@@ -198,7 +268,7 @@ describe('parseDocuments', () => {
     ])
   })
 
-  it('should parse markdown document with filetype document', async () => {
+  it('should parse markdown document with filetype document', () => {
     let docs = [{
       filetype: 'typescript',
       content: 'const workspace'
@@ -213,6 +283,11 @@ describe('parseDocuments', () => {
       'header'
     ])
     expect(res.highlights).toEqual([{
+      colEnd: -1,
+      colStart: 0,
+      hlGroup: "CocFloatDividingLine",
+      lnum: 1,
+    }, {
       hlGroup: 'CocBold',
       lnum: 2,
       colStart: 0,
@@ -223,7 +298,7 @@ describe('parseDocuments', () => {
     ])
   })
 
-  it('should parse document with highlights', async () => {
+  it('should parse document with highlights', () => {
     let docs: Documentation[] = [{
       filetype: 'txt',
       content: 'foo'
@@ -239,10 +314,10 @@ describe('parseDocuments', () => {
     }]
     let res = parseDocuments(docs)
     let { highlights } = res
-    expect(highlights).toEqual([{ lnum: 2, colStart: 4, colEnd: 7, hlGroup: 'String' }])
+    expect(highlights[1]).toEqual({ lnum: 2, colStart: 4, colEnd: 7, hlGroup: 'String' })
   })
 
-  it('should parse documents with active highlights', async () => {
+  it('should parse documents with active highlights', () => {
     let docs = [{
       filetype: 'javascript',
       content: 'func(foo, bar)',
@@ -253,7 +328,6 @@ describe('parseDocuments', () => {
       active: [15, 20]
     }]
     let res = parseDocuments(docs as any)
-    expect(res.highlights).toEqual([{ colStart: 5, colEnd: 8, lnum: 0, hlGroup: 'CocUnderline' }
-    ])
+    expect(res.highlights[0]).toEqual({ colStart: 5, colEnd: 8, lnum: 0, hlGroup: 'CocFloatActive' })
   })
 })

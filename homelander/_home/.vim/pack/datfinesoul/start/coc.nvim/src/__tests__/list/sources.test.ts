@@ -1,18 +1,35 @@
-import { Neovim } from '@chemzqm/neovim'
-import { CancellationToken, Emitter } from 'vscode-jsonrpc'
-import { Diagnostic, DiagnosticSeverity, Disposable, Location, Range } from 'vscode-languageserver-protocol'
+import { Neovim } from '../../neovim'
+import fs from 'fs'
+import os from 'os'
+import { v4 as uuid } from 'uuid'
+import { CancellationToken, Diagnostic, DiagnosticSeverity, Disposable, DocumentLink, DocumentSymbol, Emitter, Location, Position, Range, SymbolInformation, SymbolKind, SymbolTag, TextEdit } from 'vscode-languageserver-protocol'
 import { URI } from 'vscode-uri'
-import diagnosticManager from '../../diagnostic/manager'
+import diagnosticManager, { DiagnosticItem } from '../../diagnostic/manager'
 import events from '../../events'
+import extensions from '../../extension/index'
+import { ExtensionInfo, ExtensionManager } from '../../extension/manager'
+import { ExtensionStat } from '../../extension/stat'
 import languages from '../../languages'
 import BasicList, { PreviewOptions, toVimFiletype } from '../../list/basic'
-import { formatListItems, formatPath, UnformattedListItem } from '../../list/formatting'
+import { fixWidth, formatListItems, formatPath, formatUri, UnformattedListItem } from '../../list/formatting'
 import manager from '../../list/manager'
+import { convertToLabel } from '../../list/source/diagnostics'
+import ExtensionList, { getExtensionPrefix, getExtensionPriority, sortExtensionItem } from '../../list/source/extensions'
+import FolderList from '../../list/source/folders'
+import { mruScore } from '../../list/source/lists'
+import OutlineList, { contentToItems, getFilterText, loadCtagsSymbols, symbolsToListItems } from '../../list/source/outline'
+import SymbolsList, { sortSymbolItems } from '../../list/source/symbols'
+import { ListArgument, ListContext, ListItem, ListOptions } from '../../list/types'
 import Document from '../../model/document'
-import services, { IServiceProvider } from '../../services'
-import { ListArgument, ListContext, ListItem, ServiceStat } from '../../types'
+import services, { IServiceProvider, ServiceStat } from '../../services'
+import { QuickfixItem } from '../../types'
 import { disposeAll } from '../../util'
+import * as extension from '../../util/extensionRegistry'
+import { path, which } from '../../util/node'
+import { Registry } from '../../util/registry'
+import window from '../../window'
 import workspace from '../../workspace'
+import Parser from '../handler/parser'
 import helper from '../helper'
 
 let listItems: ListItem[] = []
@@ -25,9 +42,13 @@ class OptionList extends BasicList {
     name: '-i, -input INPUT',
     hasValue: true,
     description: 'input'
+  }, {
+    key: 'name',
+    description: '',
+    name: '-name'
   }]
-  constructor(nvim) {
-    super(nvim)
+  constructor() {
+    super()
     this.addLocationActions()
   }
   public loadItems(_context: ListContext, _token: CancellationToken): Promise<ListItem[]> {
@@ -39,8 +60,8 @@ let previewOptions: PreviewOptions
 class SimpleList extends BasicList {
   public name = 'simple'
   public defaultAction: 'preview'
-  constructor(nvim: Neovim) {
-    super(nvim)
+  constructor() {
+    super()
     this.addAction('preview', async (_item, context) => {
       await this.preview(previewOptions, context)
     })
@@ -52,20 +73,55 @@ class SimpleList extends BasicList {
   }
 }
 
+async function createContext(option: Partial<ListOptions>): Promise<ListContext> {
+  let buffer = await nvim.buffer
+  let window = await nvim.window
+  return {
+    args: [],
+    buffer,
+    cwd: process.cwd(),
+    input: '',
+    listWindow: nvim.createWindow(1002),
+    options: Object.assign({
+      position: 'bottom',
+      reverse: false,
+      input: '',
+      ignorecase: false,
+      smartcase: false,
+      interactive: false,
+      sort: false,
+      mode: 'normal',
+      matcher: 'strict',
+      autoPreview: false,
+      numberSelect: false,
+      noQuit: false,
+      first: false
+    }, option),
+    window
+  }
+}
+
 let disposables: Disposable[] = []
 let nvim: Neovim
-const locations: any[] = [{
+const locations: QuickfixItem[] = [{
   filename: __filename,
   range: Range.create(0, 0, 0, 6),
-  text: 'foo'
+  targetRange: Range.create(0, 0, 0, 6),
+  text: 'foo',
+  type: 'Error'
 }, {
   filename: __filename,
   range: Range.create(2, 0, 2, 6),
-  text: 'Bar'
+  text: 'Bar',
+  type: 'Warning'
 }, {
   filename: __filename,
   range: Range.create(3, 0, 4, 6),
   text: 'multiple'
+}, {
+  filename: path.join(os.tmpdir(), '3195369f-5b9f-4c46-99cd-6007c0224595'),
+  range: Range.create(3, 0, 4, 6),
+  text: 'tmpdir'
 }]
 
 beforeAll(async () => {
@@ -86,41 +142,114 @@ afterEach(async () => {
 })
 
 describe('formatting', () => {
-  describe('formatPath()', () => {
-    it('should format path', async () => {
-      expect(formatPath('hidden', 'path')).toBe('')
-      expect(formatPath('full', __filename)).toMatch('sources.test.ts')
-      expect(formatPath('short', __filename)).toMatch('sources.test.ts')
-      expect(formatPath('filename', __filename)).toMatch('sources.test.ts')
-    })
+  it('should format path', () => {
+    expect(formatPath('short', 'home')).toMatch('home')
+    expect(formatPath('hidden', 'path')).toBe('')
+    expect(formatPath('full', __filename)).toMatch('sources.test.ts')
+    expect(formatPath('short', __filename)).toMatch('sources.test.ts')
+    expect(formatPath('filename', __filename)).toMatch('sources.test.ts')
   })
 
-  describe('formatListItems', () => {
-    it('should format list items', async () => {
-      expect(formatListItems(false, [])).toEqual([])
-      let items: UnformattedListItem[] = [{
-        label: ['a', 'b', 'c']
-      }]
-      expect(formatListItems(false, items)).toEqual([{
-        label: 'a\tb\tc'
-      }])
-      items = [{
-        label: ['a', 'b', 'c']
-      }, {
-        label: ['foo', 'bar', 'go']
-      }]
-      expect(formatListItems(true, items)).toEqual([{
-        label: 'a  \tb  \tc '
-      }, {
-        label: 'foo\tbar\tgo'
-      }])
+  it('should format uri', () => {
+    let cwd = process.cwd()
+    expect(formatUri('http://www.example.com', cwd)).toMatch('http')
+    expect(formatUri(URI.file(__filename).toString(), cwd)).toMatch('sources')
+    expect(formatUri(URI.file(os.tmpdir()).toString(), cwd)).toMatch(os.tmpdir())
+  })
+
+  it('should fixWidth', () => {
+    expect(fixWidth('a'.repeat(10), 2)).toBe('a.')
+  })
+
+  it('should sort symbols', () => {
+    const assert = (a, b, n) => {
+      expect(sortSymbolItems(a, b)).toBe(n)
+    }
+    assert({ data: { score: 1 } }, { data: { score: 2 } }, 1)
+    assert({ data: { kind: 1 } }, { data: { kind: 2 } }, -1)
+    assert({ data: { file: 'aa' } }, { data: { file: 'b' } }, 1)
+  })
+
+  it('should format list items', () => {
+    expect(formatListItems(false, [])).toEqual([])
+    let items: UnformattedListItem[] = [{
+      label: ['a', 'b', 'c']
+    }]
+    expect(formatListItems(false, items)).toEqual([{
+      label: 'a\tb\tc'
+    }])
+    items = [{
+      label: ['a', 'b', 'c']
+    }, {
+      label: ['foo', 'bar', 'go']
+    }]
+    expect(formatListItems(true, items)).toEqual([{
+      label: 'a  \tb  \tc '
+    }, {
+      label: 'foo\tbar\tgo'
+    }])
+  })
+})
+
+describe('Extensions util', () => {
+  it('should sortExtensionItem', () => {
+    expect(sortExtensionItem({ data: { priority: 1 } }, { data: { priority: 0 } })).toBe(-1)
+    expect(sortExtensionItem({ data: { id: 'a' } }, { data: { id: 'b' } })).toBe(1)
+    expect(sortExtensionItem({ data: { id: 'b' } }, { data: { id: 'a' } })).toBe(-1)
+  })
+
+  it('should get extension prefix', () => {
+    expect(getExtensionPrefix('')).toBe('+')
+    expect(getExtensionPrefix('disabled')).toBe('-')
+    expect(getExtensionPrefix('activated')).toBe('*')
+    expect(getExtensionPrefix('unknown')).toBe('?')
+  })
+
+  it('should get extension priority', () => {
+    expect(getExtensionPriority('')).toBe(0)
+    expect(getExtensionPriority('unknown')).toBe(2)
+    expect(getExtensionPriority('activated')).toBe(1)
+    expect(getExtensionPriority('disabled')).toBe(-1)
+  })
+})
+
+describe('Outline util', () => {
+  it('should getFilterText', () => {
+    expect(getFilterText(DocumentSymbol.create('name', '', SymbolKind.Function, Range.create(0, 0, 0, 1), Range.create(0, 0, 0, 1)), 'kind')).toBe('name')
+    expect(getFilterText(DocumentSymbol.create('name', '', SymbolKind.Function, Range.create(0, 0, 0, 1), Range.create(0, 0, 0, 1)), '')).toBe('nameFunction')
+  })
+
+  it('should load items by ctags', async () => {
+    let doc = await workspace.document
+    let spy = jest.spyOn(which, 'sync').mockImplementation(() => {
+      return ''
     })
+    let items = await loadCtagsSymbols(doc, nvim, CancellationToken.None)
+    expect(items).toEqual([])
+    spy.mockRestore()
+    doc = await helper.createDocument(__filename)
+    items = await loadCtagsSymbols(doc, nvim, CancellationToken.None)
+    expect(Array.isArray(items)).toBe(true)
+  })
+
+  it('should convert symbols to list items', async () => {
+    let symbols: DocumentSymbol[] = []
+    symbols.push(DocumentSymbol.create('function', '', SymbolKind.Function, Range.create(1, 0, 1, 1), Range.create(1, 0, 1, 1)))
+    symbols.push(DocumentSymbol.create('class', '', SymbolKind.Class, Range.create(0, 0, 0, 1), Range.create(0, 0, 0, 1)))
+    let items = symbolsToListItems(symbols, 'lsp:/1', 'class')
+    expect(items.length).toBe(1)
+    expect(items[0].data.kind).toBe('Class')
+  })
+
+  it('should convert to list items', async () => {
+    let doc = await workspace.document
+    expect(contentToItems('a\tb\t2\td\n\n', doc).length).toBe(1)
   })
 })
 
 describe('configuration', () => {
   beforeEach(() => {
-    let list = new OptionList(nvim)
+    let list = new OptionList()
     manager.registerList(list)
   })
 
@@ -163,19 +292,19 @@ describe('BasicList', () => {
 
   describe('parse arguments', () => {
     it('should parse args #1', () => {
-      let list = new OptionList(nvim)
+      let list = new OptionList()
       let res = list.parseArguments(['-w'])
       expect(res).toEqual({ word: true })
     })
 
     it('should parse args #2', () => {
-      let list = new OptionList(nvim)
+      let list = new OptionList()
       let res = list.parseArguments(['-word'])
       expect(res).toEqual({ word: true })
     })
 
     it('should parse args #3', () => {
-      let list = new OptionList(nvim)
+      let list = new OptionList()
       let res = list.parseArguments(['-input', 'foo'])
       expect(res).toEqual({ input: 'foo' })
     })
@@ -184,11 +313,13 @@ describe('BasicList', () => {
   describe('jumpTo()', () => {
     let list: OptionList
     beforeAll(() => {
-      list = new OptionList(nvim)
+      list = new OptionList()
     })
+
     it('should jump to uri', async () => {
       let uri = URI.file(__filename).toString()
-      await list.jumpTo(uri, 'edit')
+      let ctx = await createContext({ position: 'tab' })
+      await list.jumpTo(uri, null, ctx)
       let bufname = await nvim.call('bufname', ['%'])
       expect(bufname).toMatch('sources.test.ts')
     })
@@ -213,7 +344,7 @@ describe('BasicList', () => {
   describe('convertLocation()', () => {
     let list: OptionList
     beforeAll(() => {
-      list = new OptionList(nvim)
+      list = new OptionList()
     })
     it('should convert uri', async () => {
       let uri = URI.file(__filename).toString()
@@ -239,7 +370,7 @@ describe('BasicList', () => {
   describe('createAction()', () => {
     it('should overwrite action', async () => {
       let idx: number
-      let list = new OptionList(nvim)
+      let list = new OptionList()
       listItems.push({
         label: 'foo',
         location: Location.create('untitled:///1', Range.create(0, 0, 0, 0))
@@ -262,7 +393,7 @@ describe('BasicList', () => {
 
   describe('preview()', () => {
     beforeEach(() => {
-      let list = new SimpleList(nvim)
+      let list = new SimpleList()
       disposables.push(manager.registerList(list))
     })
 
@@ -273,7 +404,7 @@ describe('BasicList', () => {
       await manager.doAction('preview')
       let res = await nvim.call('coc#list#has_preview') as number
       expect(res).toBeGreaterThan(0)
-      let winid = await nvim.call('win_getid', [res])
+      let winid = await nvim.call('win_getid', [res]) as number
       return winid
     }
 
@@ -296,7 +427,7 @@ describe('BasicList', () => {
         lines: ['foo', 'bar'],
         range: Range.create(0, 0, 0, 3)
       })
-      let res = await nvim.call('getmatches', [winid])
+      let res = await nvim.call('getmatches', [winid]) as any[]
       expect(res.length).toBeGreaterThan(0)
     })
   })
@@ -307,7 +438,7 @@ describe('BasicList', () => {
       await nvim.setLine('foo')
       let doc = await workspace.document
       expect(doc.uri).toMatch('untitled')
-      let list = new OptionList(nvim)
+      let list = new OptionList()
       listItems.push({
         label: 'foo',
         location: Location.create(doc.uri, Range.create(0, 0, 0, 0))
@@ -328,7 +459,7 @@ describe('BasicList', () => {
 })
 
 describe('list sources', () => {
-  beforeAll(async () => {
+  beforeEach(async () => {
     await nvim.setVar('coc_jump_locations', locations)
   })
 
@@ -336,13 +467,36 @@ describe('list sources', () => {
     it('should highlight ranges', async () => {
       await manager.start(['--normal', '--auto-preview', 'location'])
       await manager.session.ui.ready
-      await helper.wait(200)
+      await helper.waitFor('winnr', ['$'], 3)
       manager.prompt.cancel()
       await nvim.command('wincmd k')
       let name = await nvim.eval('bufname("%")')
       expect(name).toMatch('sources.test.ts')
-      let res = await nvim.call('getmatches')
+      let res = await nvim.call('getmatches') as any[]
       expect(res.length).toBe(1)
+    })
+
+    it('should not use filename when current buffer only', async () => {
+      let filepath = path.join(os.tmpdir(), 'b7d9e548-00ec-4419-98a8-dc03874e405c')
+      let doc = await helper.createDocument(filepath)
+      let locations = [{
+        filename: filepath,
+        bufnr: doc.bufnr,
+        lnum: 1,
+        col: 1,
+        text: 'multiple'
+      }, {
+        filename: filepath,
+        bufnr: doc.bufnr,
+        lnum: 1,
+        col: 1,
+        end_lnum: 2,
+        end_col: 1,
+        text: 'multiple'
+      }]
+      await nvim.setVar('coc_jump_locations', locations)
+      await manager.start(['--normal', '--auto-preview', 'location'])
+      await manager.session.ui.ready
     })
 
     it('should change highlight on cursor move', async () => {
@@ -353,7 +507,7 @@ describe('list sources', () => {
       await events.fire('CursorMoved', [bufnr, [2, 1]])
       await helper.waitFor('winnr', ['$'], 3)
       await nvim.command('wincmd k')
-      let res = await nvim.call('getmatches')
+      let res = await nvim.call('getmatches') as any
       expect(res.length).toBe(1)
       expect(res[0]['pos1']).toEqual([3, 1, 6])
     })
@@ -366,7 +520,7 @@ describe('list sources', () => {
       await events.fire('CursorMoved', [bufnr, [2, 1]])
       await helper.waitFor('winnr', ['$'], 3)
       await nvim.command('wincmd k')
-      let res = await nvim.call('getmatches')
+      let res = await nvim.call('getmatches') as any
       expect(res.length).toBe(1)
       expect(res[0]['pos1']).toBeDefined()
       expect(res[0]['pos2']).toBeDefined()
@@ -381,6 +535,7 @@ describe('list sources', () => {
     })
 
     it('should do quickfix action', async () => {
+      await nvim.setVar('coc_quickfix_open_command', 'copen', false)
       await manager.start(['--normal', 'location'])
       await manager.session.ui.ready
       await manager.session.ui.selectAll()
@@ -392,7 +547,6 @@ describe('list sources', () => {
     it('should do refactor action', async () => {
       await manager.start(['--normal', 'location'])
       await manager.session.ui.ready
-      await manager.session.ui.selectAll()
       await manager.doAction('refactor')
       let name = await nvim.eval('bufname("%")')
       expect(name).toMatch('coc_refactor')
@@ -432,16 +586,27 @@ describe('list sources', () => {
   })
 
   describe('commands', () => {
-    it('should load commands source', async () => {
-      await manager.start(['commands'])
-      await manager.session?.ui.ready
-      expect(manager.isActivated).toBe(true)
-    })
-
     it('should do run action', async () => {
       await manager.start(['commands'])
       await manager.session?.ui.ready
       await manager.doAction()
+    })
+
+    it('should load commands source', async () => {
+      let registry = Registry.as<extension.IExtensionRegistry>(extension.Extensions.ExtensionContribution)
+      registry.registerExtension('single', {
+        name: 'single',
+        directory: os.tmpdir(),
+        onCommands: ['cmd', 'cmd'],
+        commands: [{ command: 'cmd', title: 'title' }]
+      })
+      await manager.start(['commands'])
+      await manager.session?.ui.ready
+      expect(manager.isActivated).toBe(true)
+      await manager.doAction('append')
+      let line = await helper.getCmdline()
+      expect(line).toMatch(':CocCommand')
+      registry.unregistExtension('single')
     })
   })
 
@@ -477,32 +642,96 @@ describe('list sources', () => {
       return doc
     }
 
+    it('should get label', async () => {
+      let item: DiagnosticItem = {
+        code: 1000,
+        col: 0,
+        end_col: 1,
+        end_lnum: 1,
+        file: os.tmpdir(),
+        level: 0,
+        lnum: 1,
+        location: Location.create('file:///1', Range.create(0, 0, 0, 1)),
+        message: 'message',
+        severity: 'error',
+        source: 'source'
+      }
+      expect(convertToLabel(item, process.cwd(), false).indexOf('1000')).toBe(-1)
+      expect(convertToLabel(item, process.cwd(), true, 'hidden').includes('[source 1000]')).toBe(true)
+    })
+
     it('should load diagnostics source', async () => {
       await createDocument('a')
+      await createDocument('b')
       await manager.start(['diagnostics'])
       await manager.session?.ui.ready
       expect(manager.isActivated).toBe(true)
+
+      let buf = await nvim.buffer
+      let lines = await buf.lines
+      expect(lines.length).toEqual(10)
     })
 
-    it('should not include code', async () => {
-      let fn = helper.updateConfiguration('list.source.diagnostics.includeCode', false)
-      disposables.push({ dispose: fn })
+    it('should load diagnostics for buffer only', async () => {
       await createDocument('a')
-      await manager.start(['diagnostics'])
+      await createDocument('b')
+      await manager.start(['diagnostics', '--buffer'])
       await manager.session?.ui.ready
       expect(manager.isActivated).toBe(true)
-      let line = await nvim.line
-      expect(line.match(/100/)).toBeNull()
+
+      let buf = await nvim.buffer
+      let lines = await buf.lines
+      expect(lines.length).toEqual(5)
     })
 
-    it('should hide file path', async () => {
-      helper.updateConfiguration('list.source.diagnostics.pathFormat', 'hidden')
-      await createDocument('foo')
-      await manager.start(['diagnostics'])
+    it('should load diagnostics for workspace folder only', async () => {
+      await createDocument('list/workspace-folder1/a')
+      await createDocument('list/workspace-folder1/b')
+
+      await createDocument('list/workspace-folder2/c')
+      await createDocument('list/workspace-folder2/d')
+
+      await createDocument('e')
+      await createDocument('f')
+
+      const workspaceFolder = path.join(__dirname, 'workspace-folder1')
+      jest.spyOn(workspace, 'getWorkspaceFolder').mockReturnValue({
+        name: 'workspace-folder1',
+        uri: URI.file(workspaceFolder).toString()
+      })
+      await manager.start(['diagnostics', '--workspace-folder'])
       await manager.session?.ui.ready
       expect(manager.isActivated).toBe(true)
-      let line = await nvim.line
-      expect(line.match(/foo/)).toBeNull()
+
+      let buf = await nvim.buffer
+      let lines = await buf.lines
+      // A Total of 10 for buf a & b
+      expect(lines.length).toEqual(10)
+    })
+
+    it('should load no diagnostics for buffers outside workspace folder', async () => {
+      await createDocument('list/workspace-folder1/a')
+      await createDocument('list/workspace-folder1/b')
+
+      await createDocument('list/workspace-folder2/c')
+      await createDocument('list/workspace-folder2/d')
+
+      await createDocument('e')
+      await createDocument('f')
+
+      const workspaceFolder = path.join(__dirname, 'workspace-folder4')
+      jest.spyOn(workspace, 'getWorkspaceFolder').mockReturnValue({
+        name: 'workspace-folder4',
+        uri: URI.file(workspaceFolder).toString()
+      })
+      await manager.start(['diagnostics', '--workspace-folder'])
+      await manager.session?.ui.ready
+      expect(manager.isActivated).toBe(true)
+
+      let buf = await nvim.buffer
+      let lines = await buf.lines
+      // No results line just visible
+      expect(lines.length).toEqual(1)
     })
 
     it('should refresh on diagnostics refresh', async () => {
@@ -523,44 +752,182 @@ describe('list sources', () => {
 
   describe('extensions', () => {
     it('should load extensions source', async () => {
-      await manager.start(['extensions'])
-      await manager.session?.ui.ready
-      expect(manager.isActivated).toBe(true)
+      let folder = path.join(os.tmpdir(), uuid())
+      fs.mkdirSync(path.join(folder, 'foo'), { recursive: true })
+      fs.mkdirSync(path.join(folder, 'bar'), { recursive: true })
+      let infos: ExtensionInfo[] = []
+      infos.push({
+        id: 'foo',
+        version: '1.0.0',
+        description: 'foo',
+        root: path.join(folder, 'foo'),
+        exotic: false,
+        state: 'activated',
+        isLocal: false,
+        isLocked: true,
+        packageJSON: { name: 'foo', engines: {} }
+      })
+      infos.push({
+        id: 'bar',
+        version: '1.0.0',
+        description: 'bar',
+        root: path.join(folder, 'bar'),
+        exotic: false,
+        state: 'activated',
+        isLocal: true,
+        isLocked: false,
+        packageJSON: { name: 'bar', engines: {} }
+      })
+      let spy = jest.spyOn(extensions, 'getExtensionStates').mockImplementation(() => {
+        return Promise.resolve(infos)
+      })
+      const doAction = async (name: string, item: any) => {
+        let action = source.actions.find(o => o.name == name)
+        await action.execute(item)
+      }
+      let states = new ExtensionStat(folder)
+      let manager = new ExtensionManager(states, folder)
+      let source = new ExtensionList(manager)
+      let items = await source.loadItems()
+      expect(items.length).toBe(2)
+      items[0].data.state = 'disabled'
+      await doAction('toggle', items[0])
+      await doAction('toggle', items[1])
+      items[1].data.state = 'loaded'
+      await expect(async () => {
+        await doAction('toggle', items[1])
+      }).rejects.toThrow(Error)
+      await doAction('configuration', items[0])
+      let jsonfile = path.join(folder, 'bar/package.json')
+      fs.writeFileSync(jsonfile, '{}', 'utf8')
+      await doAction('configuration', items[1])
+      fs.writeFileSync(jsonfile, '{"contributes": {}}', 'utf8')
+      await doAction('configuration', items[1])
+      await helper.mockFunction('coc#ui#open_url', 0)
+      await doAction('open', items[1])
+      await doAction('disable', items[0])
+      await doAction('disable', items[1])
+      await doAction('enable', items[0])
+      await doAction('enable', items[1])
+      await doAction('lock', items[0])
+      await expect(async () => {
+        await doAction('reload', items[0])
+      }).rejects.toThrow(Error)
+      await doAction('uninstall', items)
+      await doAction('help', items[0])
+      let helpfile = path.join(folder, 'bar/readme.md')
+      fs.writeFileSync(helpfile, '', 'utf8')
+      await doAction('help', items[1])
+      let bufname = await nvim.eval('bufname("%")')
+      expect(bufname).toMatch('readme')
+      source.doHighlight()
+      spy.mockRestore()
     })
   })
 
   describe('folders', () => {
     it('should load folders source', async () => {
-      await manager.start(['folders'])
-      await manager.session?.ui.ready
-      expect(manager.isActivated).toBe(true)
+      await helper.createDocument(__filename)
+      let uid = uuid()
+      let source = new FolderList()
+      const doAction = async (name: string, item: any) => {
+        let action = source.actions.find(o => o.name == name)
+        await action.execute(item)
+      }
+      let res = await source.loadItems()
+      expect(res.length).toBe(1)
+      await doAction('delete', res[0])
+      expect(workspace.folderPaths.length).toBe(0)
+      let p = doAction('edit', res[0])
+      await helper.waitFor('mode', [], 'c')
+      await nvim.input('<cr>')
+      await p
+      p = doAction('edit', res[0])
+      await helper.waitFor('mode', [], 'c')
+      await nvim.input('<C-u>')
+      await nvim.input('<cr>')
+      await p
+      p = doAction('newfile', res[0])
+      await helper.waitFloat()
+      await helper.wait(30)
+      await nvim.input('<C-u>')
+      await nvim.input('<cr>')
+      await p
+      fs.rmSync(path.join(os.tmpdir(), uid), { recursive: true, force: true })
+      let filepath = path.join(os.tmpdir(), uid, 'bar')
+      let spy = jest.spyOn(window, 'requestInput').mockImplementation(() => {
+        return Promise.resolve(filepath)
+      })
+      await doAction('newfile', res[0])
+      let exists = fs.existsSync(filepath)
+      expect(exists).toBe(true)
+      spy.mockRestore()
+      workspace.reset()
     })
   })
 
   describe('lists', () => {
+    it('should get list score', () => {
+      expect(mruScore(['foo'], 'foo')).toBe(1)
+      expect(mruScore([], 'foo')).toBe(-1)
+    })
+
     it('should load lists source', async () => {
       await manager.start(['lists'])
       await manager.session?.ui.ready
       expect(manager.isActivated).toBe(true)
-      await helper.listInput('<cr>')
-      await helper.wait(50)
-      let s = manager.getSession()
-      expect(s.name != 'lists').toBe(true)
+      await manager.doAction()
+      await helper.waitValue(() => {
+        let s = manager.getSession()
+        return s && s.name !== 'lists'
+      }, true)
     })
   })
 
   describe('outline', () => {
-    it('should load outline source', async () => {
-      await manager.start(['outline'])
-      await manager.session?.ui.ready
-      expect(manager.isActivated).toBe(true)
+    it('should load items from provider', async () => {
+      let doc = await workspace.document
+      disposables.push(languages.registerDocumentSymbolProvider([{ language: '*' }], {
+        provideDocumentSymbols: document => {
+          let text = document.getText()
+          let parser = new Parser(text, text.includes('detail'))
+          let res = parser.parse()
+          return Promise.resolve(res)
+        }
+      }))
+      let source = new OutlineList()
+      let context = await createContext({})
+      let res = await source.loadItems(context, CancellationToken.None)
+      expect(res).toEqual([])
+      let code = `class myClass {
+      fun1() {
+      }
+    }`
+      await doc.applyEdits([TextEdit.insert(Position.create(0, 0), code)])
+      res = await source.loadItems(context, CancellationToken.None)
+      expect(res.length).toBe(2)
+      source.doHighlight()
+    })
+
+    it('should load items by ctags', async () => {
+      helper.updateConfiguration('list.source.outline.ctagsFiletypes', ['vim'])
+      await nvim.command('edit +setl\\ filetype=vim foo')
+      let doc = await workspace.document
+      expect(doc.filetype).toBe('vim')
+      let source = new OutlineList()
+      let context = await createContext({})
+      context.args = ['-kind', 'function', '-name', 'name']
+      let res = await source.loadItems(context, CancellationToken.None)
+      expect(res).toEqual([])
+      res = await source.loadItems(context, CancellationToken.Cancelled)
+      expect(res).toEqual([])
     })
   })
 
   describe('services', () => {
     function createService(name: string): IServiceProvider {
-      let _onServcieReady = new Emitter<void>()
-      // public readonly onServcieReady: Event<void> = this.
+      let _onServiceReady = new Emitter<void>()
+      // public readonly onServiceReady: Event<void> = this.
       let service: IServiceProvider = {
         id: name,
         name,
@@ -568,7 +935,7 @@ describe('list sources', () => {
         state: ServiceStat.Initial,
         start(): Promise<void> {
           service.state = ServiceStat.Running
-          _onServcieReady.fire()
+          _onServiceReady.fire()
           return Promise.resolve()
         },
         dispose(): void {
@@ -579,11 +946,11 @@ describe('list sources', () => {
         },
         restart(): void {
           service.state = ServiceStat.Running
-          _onServcieReady.fire()
+          _onServiceReady.fire()
         },
-        onServiceReady: _onServcieReady.event
+        onServiceReady: _onServiceReady.event
       }
-      disposables.push(services.regist(service))
+      disposables.push(services.register(service))
       return service
     }
 
@@ -641,26 +1008,122 @@ describe('list sources', () => {
   })
 
   describe('symbols', () => {
+    it('should create list item', () => {
+      let source = new SymbolsList()
+      let symbolItem = SymbolInformation.create('root', SymbolKind.Method, Range.create(0, 0, 0, 10), '')
+      let item = source.createListItem('', symbolItem, 'kind', './foo')
+      expect(item).toBeDefined()
+      symbolItem.tags = [SymbolTag.Deprecated]
+      item = source.createListItem('', symbolItem, 'kind', './foo')
+      let highlights = item.ansiHighlights
+      let find = highlights.find(o => o.hlGroup == 'CocDeprecatedHighlight')
+      expect(find).toBeDefined()
+      source.fuzzyMatch.setPattern('a')
+      item = source.createListItem('a', symbolItem, 'kind', './foo')
+      expect(item).toBeDefined()
+      source.fuzzyMatch.setPattern('r')
+      item = source.createListItem('r', symbolItem, 'kind', './foo')
+      highlights = item.ansiHighlights
+      find = highlights.find(o => o.hlGroup == 'CocListSearch')
+      expect(find).toBeDefined()
+    })
+
+    it('should resolve item', async () => {
+      let source = new SymbolsList()
+      let res = await source.resolveItem({ label: 'label', data: {} })
+      expect(res).toBeNull()
+      let haveResult = false
+      let disposable = languages.registerWorkspaceSymbolProvider({
+        provideWorkspaceSymbols: () => [
+          SymbolInformation.create('root', SymbolKind.Method, Range.create(0, 0, 0, 10), '')
+        ],
+        resolveWorkspaceSymbol: symbolItem => {
+          symbolItem.location = Location.create('lsp:///1', Range.create(0, 0, 1, 0))
+          return haveResult ? symbolItem : null
+        }
+      })
+      disposables.push(disposable)
+      let symbols = await languages.getWorkspaceSymbols('', CancellationToken.None)
+      res = await source.resolveItem({ label: 'label', data: { original: symbols[0] } })
+      expect(res).toBeNull()
+      haveResult = true
+      symbols[0].location = { uri: 'lsp:///1' }
+      res = await source.resolveItem({ label: 'label', data: { original: symbols[0] } })
+      expect(Location.is(res.location)).toBe(true)
+      if (Location.is(res.location)) {
+        expect(res.location.uri).toBe('lsp:///1')
+      }
+    })
+
+    it('should load items', async () => {
+      let source = new SymbolsList()
+      let context = await createContext({ interactive: true })
+      await expect(async () => {
+        await source.loadItems(context, CancellationToken.None)
+      }).rejects.toThrow(Error)
+      disposables.push(languages.registerWorkspaceSymbolProvider({
+        provideWorkspaceSymbols: () => [
+          SymbolInformation.create('root', SymbolKind.Method, Range.create(0, 0, 0, 10), URI.file(__filename).toString())
+        ]
+      }))
+      let res = await source.loadItems(context, CancellationToken.Cancelled)
+      expect(res).toEqual([])
+      context.args = ['-kind', 'function']
+      res = await source.loadItems(context, CancellationToken.None)
+      expect(res).toEqual([])
+      context.args = []
+      helper.updateConfiguration('list.source.symbols.excludes', ['**/*.ts'])
+      res = await source.loadItems(context, CancellationToken.None)
+      expect(res).toEqual([])
+      helper.updateConfiguration('list.source.symbols.excludes', [])
+      res = await source.loadItems(context, CancellationToken.None)
+      expect(res.length).toBe(1)
+    })
+
     it('should load symbols source', async () => {
       await helper.createDocument()
-      let disposable = languages.registerWorkspaceSymbolProvider({
+      disposables.push(languages.registerWorkspaceSymbolProvider({
         provideWorkspaceSymbols: () => []
-      })
+      }))
       await manager.start(['--interactive', 'symbols'])
       await manager.session?.ui.ready
       expect(manager.isActivated).toBe(true)
-      disposable.dispose()
     })
   })
 
   describe('links', () => {
     it('should load links source', async () => {
       let disposable = languages.registerDocumentLinkProvider([{ scheme: 'file' }, { scheme: 'untitled' }], {
-        provideDocumentLinks: () => []
+        provideDocumentLinks: () => {
+          return [
+            DocumentLink.create(Range.create(0, 0, 0, 5), 'file:///foo'),
+            DocumentLink.create(Range.create(1, 0, 1, 5), 'file:///bar')
+          ]
+        }
       })
       await manager.start(['links'])
       await manager.session?.ui.ready
       expect(manager.isActivated).toBe(true)
+      await manager.doAction('jump')
+      disposable.dispose()
+    })
+
+    it('should resolve target', async () => {
+      let disposable = languages.registerDocumentLinkProvider([{ scheme: 'file' }, { scheme: 'untitled' }], {
+        provideDocumentLinks: () => {
+          return [
+            DocumentLink.create(Range.create(0, 0, 0, 5)),
+          ]
+        },
+        resolveDocumentLink: link => {
+          link.target = 'file:///foo'
+          return link
+        }
+      })
+      await manager.start(['links'])
+      await manager.session?.ui.ready
+      expect(manager.isActivated).toBe(true)
+      await manager.doAction('open')
       disposable.dispose()
     })
   })

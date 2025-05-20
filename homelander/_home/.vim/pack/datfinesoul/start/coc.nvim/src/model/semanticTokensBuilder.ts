@@ -1,4 +1,5 @@
-import { Range, SemanticTokens, SemanticTokensLegend } from "vscode-languageserver-protocol"
+'use strict'
+import { Range, SemanticTokens, SemanticTokensLegend } from "vscode-languageserver-types"
 
 function isStringArray(value: any): value is string[] {
   return Array.isArray(value) && (value as any[]).every(elem => typeof elem === 'string')

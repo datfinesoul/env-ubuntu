@@ -1,13 +1,16 @@
-import { Buffer, Neovim } from '@chemzqm/neovim'
+import { Buffer, Neovim } from '../../neovim'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { Disposable, Range, SemanticTokensLegend } from 'vscode-languageserver-protocol'
+import { CancellationToken, CancellationTokenSource, Disposable, Position, Range, SemanticTokensLegend, TextEdit } from 'vscode-languageserver-protocol'
 import { URI } from 'vscode-uri'
 import commandManager from '../../commands'
+import events from '../../events'
+import SemanticTokensBuffer, { toHighlightPart } from '../../handler/semanticTokens/buffer'
 import SemanticTokens from '../../handler/semanticTokens/index'
 import languages from '../../languages'
 import { disposeAll } from '../../util'
+import { CancellationError } from '../../util/errors'
 import window from '../../window'
 import workspace from '../../workspace'
 import helper, { createTmpFile } from '../helper'
@@ -15,7 +18,7 @@ import helper, { createTmpFile } from '../helper'
 let nvim: Neovim
 let ns: number
 let disposables: Disposable[] = []
-let highlighter: SemanticTokens
+let semanticTokens: SemanticTokens
 let legend: SemanticTokensLegend = {
   tokenTypes: [
     "comment",
@@ -94,12 +97,17 @@ let legend: SemanticTokensLegend = {
 beforeAll(async () => {
   await helper.setup()
   nvim = helper.nvim
-  ns = await nvim.call('coc#highlight#create_namespace', ['semanticTokens'])
-  highlighter = helper.plugin.getHandler().semanticHighlighter
+  ns = await nvim.call('coc#highlight#create_namespace', ['semanticTokens']) as number
+  semanticTokens = helper.plugin.getHandler().semanticHighlighter
 })
 
 afterAll(async () => {
   await helper.shutdown()
+})
+
+afterEach(async () => {
+  await helper.reset()
+  disposeAll(disposables)
 })
 
 const defaultResult = {
@@ -117,6 +125,20 @@ const defaultResult = {
     0, 1, 1, 44, 0,
     1, 0, 1, 25, 0,
   ]
+}
+
+async function waitRefresh(tokenBuffer: SemanticTokensBuffer): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timer = setTimeout(() => {
+      disposable.dispose()
+      reject(new Error(`Timeout after 500ms`))
+    }, 500)
+    let disposable = tokenBuffer.onDidRefresh(() => {
+      disposable.dispose()
+      clearTimeout(timer)
+      resolve()
+    })
+  })
 }
 
 function registerRangeProvider(filetype: string, fn: (range: Range) => number[]): Disposable {
@@ -151,6 +173,7 @@ function registerProvider(): void {
 async function createRustBuffer(): Promise<Buffer> {
   helper.updateConfiguration('semanticTokens.filetypes', ['rust'])
   registerProvider()
+  await helper.wait(20)
   let code = `fn main() {
     println!("H");
 }`
@@ -162,25 +185,63 @@ async function createRustBuffer(): Promise<Buffer> {
   return buf
 }
 
-afterEach(async () => {
-  helper.updateConfiguration('semanticTokens.filetypes', [])
-  await helper.reset()
-  disposeAll(disposables)
-})
-
 describe('semanticTokens', () => {
-  describe('showHiglightInfo()', () => {
-    it('should show error when buffer not attached', async () => {
-      await nvim.command('h')
-      await highlighter.showHiglightInfo()
+  describe('toHighlightPart()', () => {
+    it('should convert to highlight part', () => {
+      expect(toHighlightPart('')).toBe('')
+      expect(toHighlightPart('token')).toBe('Token')
+      expect(toHighlightPart('is key word')).toBe('Is_key_word')
+      expect(toHighlightPart('token')).toBe('Token')
+    })
+  })
+
+  describe('Provider', () => {
+    it('should not throw when buffer item not found', async () => {
+      await events.fire('CursorMoved', [9])
+      await events.fire('BufWinEnter', [9])
+    })
+
+    it('should return null when range provider not exists', async () => {
+      let doc = await workspace.document
+      let res = await languages.provideDocumentRangeSemanticTokens(doc.textDocument, Range.create(0, 0, 1, 0), CancellationToken.None)
+      expect(res).toBeNull()
+    })
+
+    it('should return false when not hasSemanticTokensEdits', async () => {
+      let doc = await workspace.document
+      let res = languages.hasSemanticTokensEdits(doc.textDocument)
+      expect(res).toBe(false)
+    })
+
+    it('should return null when semanticTokens provider not exists', async () => {
+      let token = CancellationToken.None
+      let doc = await workspace.document
+      let res = await languages.provideDocumentSemanticTokens(doc.textDocument, token)
+      expect(res).toBeNull()
+      let r = await languages.provideDocumentSemanticTokensEdits(doc.textDocument, '', token)
+      expect(r).toBeNull()
+    })
+  })
+
+  describe('showHighlightInfo()', () => {
+    it('should show error when not enabled', async () => {
+      await nvim.command('enew')
+      await workspace.document
+      await semanticTokens.inspectSemanticToken()
       let line = await helper.getCmdline()
-      expect(line).toMatch('not attached')
-      await highlighter.inspectSemanticToken()
+      expect(line).toMatch('not enabled')
+    })
+
+    it('should show error message for buffer not attached', async () => {
+      await nvim.command(`edit +setl\\ buftype=nofile foo`)
+      await helper.doAction('inspectSemanticToken')
+      let msg = await helper.getCmdline()
+      expect(msg).toMatch(/not attached/)
     })
 
     it('should show message when not enabled', async () => {
       await helper.edit('t.txt')
-      await highlighter.showHiglightInfo()
+      await helper.doAction('showSemanticHighlightInfo')
       let buf = await nvim.buffer
       let lines = await buf.lines
       expect(lines[2]).toMatch('not enabled for current filetype')
@@ -188,111 +249,32 @@ describe('semanticTokens', () => {
 
     it('should show semantic tokens info', async () => {
       await createRustBuffer()
-      await highlighter.highlightCurrent()
+      await semanticTokens.highlightCurrent()
       await commandManager.executeCommand('semanticTokens.checkCurrent')
       let buf = await nvim.buffer
       let lines = await buf.lines
       let content = lines.join('\n')
       expect(content).toMatch('Semantic highlight groups used by current buffer')
     })
+
+    it('should show highlight info for empty legend', async () => {
+      helper.updateConfiguration('semanticTokens.filetypes', ['*'])
+      disposables.push(languages.registerDocumentRangeSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentRangeSemanticTokens: (_, range) => {
+          return {
+            data: []
+          }
+        }
+      }, { tokenModifiers: [], tokenTypes: [] }))
+      await semanticTokens.showHighlightInfo()
+      let buf = await nvim.buffer
+      let lines = await buf.lines
+      let content = lines.join('\n')
+      expect(content).toMatch('No token')
+    })
   })
 
   describe('highlightCurrent()', () => {
-    it('should refresh highlights', async () => {
-      await createRustBuffer()
-      await nvim.command('hi link CocSemDeclarationFunction MoreMsg')
-      await nvim.command('hi link CocSemDocumentation Statement')
-      await window.moveTo({ line: 0, character: 4 })
-      await highlighter.highlightCurrent()
-      await commandManager.executeCommand('semanticTokens.inspect')
-      let win = await helper.getFloat()
-      let buf = await win.buffer
-      let lines = await buf.lines
-      let content = lines.join('\n')
-      expect(content).toMatch('CocSemDeclarationFunction')
-    })
-
-    it('should refresh highlights by command', async () => {
-      await helper.edit()
-      let err
-      try {
-        await commandManager.executeCommand('semanticTokens.refreshCurrent')
-      } catch (e) {
-        err = e
-      }
-      expect(err).toBeDefined()
-    })
-
-    it('should refresh when buffer visible', async () => {
-      helper.updateConfiguration('semanticTokens.filetypes', ['rust'])
-      let code = `fn main() {
-    println!("H");
-}`
-      let buf = await nvim.buffer
-      await nvim.command('setf rust')
-      await buf.setLines(code.split('\n'), { start: 0, end: -1, strictIndexing: false })
-      await helper.wait(10)
-      let doc = await workspace.document
-      await doc.synchronize()
-      let item = await highlighter.getCurrentItem()
-      expect(item.enabled).toBe(false)
-      await nvim.command('edit bar')
-      registerProvider()
-      expect(item.enabled).toBe(true)
-      await helper.wait(20)
-      await nvim.command(`b ${buf.id}`)
-      await item.waitRefresh()
-      expect(item.highlights).toBeDefined()
-    })
-
-    it('should reuse exists tokens when version not changed', async () => {
-      let doc = await helper.createDocument('t.vim')
-      await doc.applyEdits([{ range: Range.create(0, 0, 0, 0), newText: 'let' }])
-      let fn = jest.fn()
-      helper.updateConfiguration('semanticTokens.filetypes', ['vim'])
-      disposables.push(languages.registerDocumentSemanticTokensProvider([{ language: 'vim' }], {
-        provideDocumentSemanticTokens: () => {
-          fn()
-          return new Promise(resolve => {
-            resolve({
-              resultId: '1',
-              data: [0, 0, 3, 1, 0]
-            })
-          })
-        }
-      }, legend))
-      let item = await highlighter.getCurrentItem()
-      item.cancel()
-      await item.doHighlight()
-      await item.doHighlight()
-      expect(fn).toBeCalledTimes(1)
-    })
-
-    it('should not highlight when pumvisible', async () => {
-      let doc = await helper.createDocument('t.vim')
-      await doc.applyEdits([{ range: Range.create(0, 0, 0, 0), newText: 'let' }])
-      await nvim.setLine('foo f')
-      await nvim.input('A')
-      await nvim.input('<C-n>')
-      await helper.waitPopup()
-      let fn = jest.fn()
-      helper.updateConfiguration('semanticTokens.filetypes', ['vim'])
-      disposables.push(languages.registerDocumentSemanticTokensProvider([{ language: 'vim' }], {
-        provideDocumentSemanticTokens: () => {
-          fn()
-          return new Promise(resolve => {
-            resolve({
-              resultId: '1',
-              data: [0, 0, 3, 1, 0]
-            })
-          })
-        }
-      }, legend))
-      let item = await highlighter.getCurrentItem()
-      await item.doHighlight()
-      expect(fn).toBeCalledTimes(0)
-    })
-
     it('should only highlight limited range on update', async () => {
       let doc = await helper.createDocument('t.vim')
       let fn = jest.fn()
@@ -316,27 +298,131 @@ describe('semanticTokens', () => {
             })
             let timer = setTimeout(() => {
               resolve({ resultId: '1', data })
-            }, 50)
+            }, 10)
           })
         }
       }, legend))
-      let item = await highlighter.getCurrentItem()
+      let item = await semanticTokens.getCurrentItem()
       await item.doHighlight()
       let newLine = 'l\n'
-      await doc.applyEdits([{ range: Range.create(0, 0, 0, 0), newText: `${newLine.repeat(2000)}` }])
+      await doc.applyEdits([{ range: Range.create(0, 0, 0, 0), newText: `${newLine.repeat(1000)}` }])
       await item.doHighlight()
-      await item.waitRefresh()
+      await waitRefresh(item)
       expect(fn).toBeCalled()
       let buf = nvim.createBuffer(doc.bufnr)
       let markers = await buf.getExtMarks(ns, 0, -1, { details: true })
       let len = markers.length
       expect(len).toBeLessThan(400)
-      await nvim.command('normal! gg')
-      await helper.wait(50)
-      await nvim.command('normal! 200G')
-      await helper.wait(50)
-      markers = await buf.getExtMarks(ns, 0, -1, { details: true })
-      expect(markers.length).toBeGreaterThan(len)
+      nvim.command('normal! gg', true)
+      await item.onCursorMoved()
+      await helper.waitValue(async () => {
+        let markers = await buf.getExtMarks(ns, 0, -1, { details: true })
+        return markers.length > 100
+      }, true)
+      nvim.command('normal! 200G', true)
+      await item.onCursorMoved()
+      await helper.waitValue(async () => {
+        let markers = await buf.getExtMarks(ns, 0, -1, { details: true })
+        return markers.length > 200
+      }, true)
+    })
+
+    it('should refresh highlights', async () => {
+      await createRustBuffer()
+      await nvim.command('hi link CocSemDeclarationFunction MoreMsg')
+      await nvim.command('hi link CocSemDocumentation Statement')
+      await window.moveTo({ line: 0, character: 4 })
+      await semanticTokens.highlightCurrent()
+      await commandManager.executeCommand('semanticTokens.inspect')
+      let win = await helper.getFloat()
+      let buf = await win.buffer
+      let lines = await buf.lines
+      let content = lines.join('\n')
+      expect(content).toMatch('Type: function\nModifiers: declaration\nHighlight group: CocSemTypeFunction')
+      await window.moveTo({ line: 1, character: 0 })
+      await commandManager.executeCommand('semanticTokens.inspect')
+      win = await helper.getFloat()
+      expect(win).toBeUndefined()
+    })
+
+    it('should refresh highlights by command', async () => {
+      await helper.edit()
+      let err
+      try {
+        await commandManager.executeCommand('semanticTokens.refreshCurrent')
+      } catch (e) {
+        err = e
+      }
+      expect(err).toBeDefined()
+    })
+
+    it('should reuse exists tokens when version not changed', async () => {
+      let doc = await helper.createDocument('t.vim')
+      await doc.applyEdits([{ range: Range.create(0, 0, 0, 0), newText: 'let' }])
+      let times = 0
+      helper.updateConfiguration('semanticTokens.filetypes', ['vim'])
+      disposables.push(languages.registerDocumentSemanticTokensProvider([{ language: 'vim' }], {
+        provideDocumentSemanticTokens: () => {
+          times++
+          return new Promise(resolve => {
+            resolve({
+              resultId: '1',
+              data: [0, 0, 3, 1, 0]
+            })
+          })
+        }
+      }, legend))
+      let item = await semanticTokens.getCurrentItem()
+      await helper.waitValue(() => {
+        return times
+      }, 1)
+      await item.doHighlight()
+      await item.doHighlight()
+      expect(times).toBe(1)
+    })
+
+    it('should return null when request cancelled', async () => {
+      let doc = await helper.createDocument('t.vim')
+      let lines: string[] = []
+      for (let i = 0; i < 2000; i++) {
+        lines.push('foo')
+      }
+      await doc.applyEdits([{ range: Range.create(0, 0, 0, 0), newText: lines.join('\n') }])
+      helper.updateConfiguration('semanticTokens.filetypes', [])
+      let cancel = true
+      let item = await semanticTokens.getCurrentItem()
+      disposables.push(languages.registerDocumentSemanticTokensProvider([{ language: 'vim' }], {
+        provideDocumentSemanticTokens: (doc, token) => {
+          return new Promise(resolve => {
+            if (cancel) {
+              process.nextTick(() => {
+                item.cancel()
+              })
+            }
+            let data = []
+            for (let i = 0; i < 2000; i++) {
+              data.push(...[i == 0 ? 0 : 1, 0, 3, 1, 1])
+            }
+            resolve({
+              resultId: '1',
+              data
+            })
+          })
+        }
+      }, legend))
+      helper.updateConfiguration('semanticTokens.filetypes', ['vim'])
+      await item.doHighlight()
+      cancel = false
+      let spy = jest.spyOn(window, 'diffHighlights').mockImplementation(() => {
+        return Promise.resolve(null)
+      })
+      await item.doHighlight(false, true)
+      await item.doHighlight(false, true)
+      spy.mockRestore()
+      expect(item.highlights).toBeDefined()
+      await helper.edit('bar')
+      await helper.wait(20)
+      await item.doHighlight()
     })
 
     it('should highlight hidden buffer on shown', async () => {
@@ -348,39 +434,141 @@ describe('semanticTokens', () => {
       let uri = URI.file(filepath).toString()
       await workspace.loadFile(uri)
       let doc = workspace.getDocument(uri)
-      let item = highlighter.getItem(doc.bufnr)
-      let fn = jest.fn()
+      let item = semanticTokens.getItem(doc.bufnr)
+      let called = false
       item.onDidRefresh(() => {
-        fn()
+        called = true
       })
       let buf = doc.buffer
-      await helper.wait(10)
       expect(doc.filetype).toBe('rust')
-      expect(fn).toBeCalledTimes(0)
       await nvim.command(`b ${buf.id}`)
-      await helper.wait(50)
-      expect(fn).toBeCalledTimes(1)
+      await helper.waitValue(() => {
+        return called
+      }, true)
     })
 
     it('should not highlight on shown when document not changed', async () => {
-      let fn = jest.fn()
+      let called = false
       let buf = await createRustBuffer()
-      let item = await highlighter.getCurrentItem()
-      await item.waitRefresh()
+      let item = await semanticTokens.getCurrentItem()
+      await waitRefresh(item)
       await nvim.command('enew')
       item.doHighlight = async () => {
-        fn()
+        called = true
       }
       await nvim.command(`b ${buf.id}`)
-      await helper.wait(100)
-      expect(fn).toBeCalledTimes(0)
+      await helper.wait(20)
+      expect(called).toBe(false)
+    })
+
+    it('should no highlights when request cancelled', async () => {
+      helper.updateConfiguration('semanticTokens.filetypes', [])
+      let doc = await workspace.document
+      let item = semanticTokens.getItem(doc.bufnr)
+      disposables.push(languages.registerDocumentRangeSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentRangeSemanticTokens: () => {
+          item.cancel()
+          return null
+        }
+      }, legend))
+      let disposable = languages.registerDocumentSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentSemanticTokens: (_, token) => {
+          item.cancel()
+          return null
+        }
+      }, legend)
+      helper.updateConfiguration('semanticTokens.filetypes', ['*'])
+      await item.doHighlight(true)
+      expect(item.highlights).toBeUndefined()
+      disposable.dispose()
+      await item.doHighlight(true)
+      await item.onCursorMoved()
+    })
+  })
+
+  describe('highlightRegions()', () => {
+    it('should refresh when buffer visible', async () => {
+      helper.updateConfiguration('semanticTokens.filetypes', ['rust'])
+      let code = `fn main() {
+    println!("H");
+}`
+      let buf = await nvim.buffer
+      await nvim.command('setf rust')
+      await buf.setLines(code.split('\n'), { start: 0, end: -1, strictIndexing: false })
+      let doc = await workspace.document
+      let item = await semanticTokens.getCurrentItem()
+      await item.highlightRegions(CancellationToken.None)
+      await doc.synchronize()
+      expect(item.enabled).toBe(false)
+      await nvim.command('edit bar')
+      registerProvider()
+      expect(item.enabled).toBe(true)
+      await nvim.command(`b ${buf.id}`)
+      await waitRefresh(item)
+      expect(item.highlights).toBeDefined()
+    })
+
+    it('should not highlight same region', async () => {
+      let buf = await createRustBuffer()
+      let item = semanticTokens.getItem(buf.id)
+      await item.doHighlight()
+      await item.highlightRegions(CancellationToken.None)
+      await item.highlightRegions(CancellationToken.None)
+    })
+
+    it('should cancel region highlight', async () => {
+      let buf = await createRustBuffer()
+      let item = semanticTokens.getItem(buf.id)
+      await item.doHighlight()
+      let tokenSource = new CancellationTokenSource()
+      let spy = jest.spyOn(window, 'diffHighlights').mockImplementation(() => {
+        tokenSource.cancel()
+        return Promise.resolve(null)
+      })
+      await item.highlightRegions(tokenSource.token)
+      spy.mockRestore()
+    })
+  })
+
+  describe('requestRangeHighlights()', () => {
+    it('should return null when canceled', async () => {
+      let doc = await workspace.document
+      let item = semanticTokens.getItem(doc.bufnr)
+      let res = await item.requestRangeHighlights(CancellationToken.Cancelled)
+      expect(res).toBeNull()
+      let tokenSource = new CancellationTokenSource()
+      disposables.push(languages.registerDocumentRangeSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentRangeSemanticTokens: () => {
+          tokenSource.cancel()
+          return { data: [] }
+        }
+      }, legend))
+      res = await item.requestRangeHighlights(tokenSource.token)
+      expect(res).toBeNull()
+    })
+
+    it('should return null when convert tokens canceled ', async () => {
+      let doc = await workspace.document
+      let item = semanticTokens.getItem(doc.bufnr)
+      let tokenSource = new CancellationTokenSource()
+      disposables.push(languages.registerDocumentRangeSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentRangeSemanticTokens: () => {
+          return { data: [1, 0, 0, 1, 0] }
+        }
+      }, legend))
+      let spy = jest.spyOn(item, 'getTokenRanges').mockImplementation(() => {
+        return Promise.resolve(null)
+      })
+      let res = await item.requestRangeHighlights(tokenSource.token)
+      expect(res).toBeNull()
+      spy.mockRestore()
     })
   })
 
   describe('clear highlights', () => {
     it('should clear highlights of current buffer', async () => {
       await createRustBuffer()
-      await highlighter.highlightCurrent()
+      await semanticTokens.highlightCurrent()
       let buf = await nvim.buffer
       let markers = await buf.getExtMarks(ns, 0, -1)
       expect(markers.length).toBeGreaterThan(0)
@@ -391,7 +579,7 @@ describe('semanticTokens', () => {
 
     it('should clear all highlights', async () => {
       await createRustBuffer()
-      await highlighter.highlightCurrent()
+      await semanticTokens.highlightCurrent()
       let buf = await nvim.buffer
       await commandManager.executeCommand('semanticTokens.clearAll')
       let markers = await buf.getExtMarks(ns, 0, -1)
@@ -400,21 +588,19 @@ describe('semanticTokens', () => {
   })
 
   describe('rangeProvider', () => {
-    it('should invoke range provider first time when both kind exists', async () => {
-      let t = 0
+    it('should invoke range provider first time when both kinds exist', async () => {
+      let called = false
       disposables.push(registerRangeProvider('rust', () => {
-        t++
+        called = true
         return []
       }))
       let buf = await createRustBuffer()
-      let item = highlighter.getItem(buf.id)
-      await item.waitRefresh()
-      await helper.wait(30)
-      expect(t).toBe(1)
+      let item = semanticTokens.getItem(buf.id)
+      await waitRefresh(item)
+      expect(called).toBe(true)
     })
 
     it('should do range highlight first time', async () => {
-      helper.updateConfiguration
       helper.updateConfiguration('semanticTokens.filetypes', ['vim'])
       let r: Range
       disposables.push(registerRangeProvider('vim', range => {
@@ -424,12 +610,13 @@ describe('semanticTokens', () => {
       let filepath = await createTmpFile('let')
       fs.renameSync(filepath, filepath + '.vim')
       let doc = await helper.createDocument(filepath + '.vim')
+      let item = await semanticTokens.getCurrentItem()
+      await doc.synchronize()
       expect(doc.filetype).toBe('vim')
-      await helper.wait(100)
-      expect(r).toBeDefined()
-      let buf = nvim.createBuffer(doc.bufnr)
-      let markers = await buf.getExtMarks(ns, 0, -1, { details: true })
-      expect(markers.length).toBe(1)
+      await helper.waitValue(() => {
+        return typeof r !== 'undefined'
+      }, true)
+      await item.onCursorMoved()
     })
 
     it('should do range highlight after cursor moved', async () => {
@@ -439,15 +626,29 @@ describe('semanticTokens', () => {
       expect(doc.filetype).toBe('vim')
       await nvim.call('setline', [2, (new Array(200).fill(''))])
       await doc.applyEdits([{ range: Range.create(0, 0, 0, 0), newText: 'let' }])
-      await helper.wait(50)
       disposables.push(registerRangeProvider('vim', range => {
         r = range
         return []
       }))
       await nvim.command('normal! G')
-      await helper.wait(50)
-      expect(r).toBeDefined()
-      expect(r.end).toEqual({ line: 201, character: 0 })
+      await helper.waitValue(() => {
+        return r && r.end.line == 201
+      }, true)
+    })
+
+    it('should not throw when range request throws', async () => {
+      helper.updateConfiguration('semanticTokens.filetypes', ['*'])
+      let doc = await workspace.document
+      let called = false
+      disposables.push(languages.registerDocumentRangeSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentRangeSemanticTokens: (_, range) => {
+          called = true
+          throw new Error('custom error')
+        }
+      }, legend))
+      let item = semanticTokens.getItem(doc.bufnr)
+      await item.doRangeHighlight(CancellationToken.None)
+      expect(called).toBe(true)
     })
 
     it('should only cancel range highlight request', async () => {
@@ -478,7 +679,7 @@ describe('semanticTokens', () => {
       }, legend))
       let doc = await helper.createDocument('t.vim')
       await doc.applyEdits([{ range: Range.create(0, 0, 0, 0), newText: 'let' }])
-      let item = await highlighter.getCurrentItem()
+      let item = await semanticTokens.getCurrentItem()
       helper.updateConfiguration('semanticTokens.filetypes', ['vim'])
       item.cancel()
       let p = item.doHighlight()
@@ -492,13 +693,13 @@ describe('semanticTokens', () => {
     it('should be disabled by default', async () => {
       helper.updateConfiguration('semanticTokens.filetypes', [])
       await workspace.document
-      const curr = await highlighter.getCurrentItem()
+      const curr = await semanticTokens.getCurrentItem()
       expect(curr.enabled).toBe(false)
     })
 
     it('should be enabled', async () => {
       await createRustBuffer()
-      const curr = await highlighter.getCurrentItem()
+      const curr = await semanticTokens.getCurrentItem()
       expect(curr.enabled).toBe(true)
     })
 
@@ -513,9 +714,9 @@ describe('semanticTokens', () => {
       await createRustBuffer()
       const doc = await workspace.document
       await nvim.call('CocAction', 'semanticHighlight')
-      const highlights = await nvim.call("coc#highlight#get_highlights", [doc.bufnr, 'semanticTokens'])
+      const highlights = await nvim.call("coc#highlight#get_highlights", [doc.bufnr, 'semanticTokens']) as any[]
       expect(highlights.length).toBeGreaterThan(0)
-      expect(highlights[0][0]).toBe('CocSemKeyword')
+      expect(highlights[0][0]).toBe('CocSemTypeKeyword')
     })
   })
 
@@ -523,55 +724,115 @@ describe('semanticTokens', () => {
     it('should perform highlight update', async () => {
       await createRustBuffer()
       let buf = await nvim.buffer
-      await highlighter.highlightCurrent()
+      await semanticTokens.highlightCurrent()
       await window.moveTo({ line: 0, character: 0 })
       let doc = await workspace.document
-      await nvim.input('if')
-      await helper.wait(50)
-      await doc.synchronize()
-      let curr = await highlighter.getCurrentItem()
-      await curr.forceHighlight()
-      let markers = await buf.getExtMarks(ns, 0, -1, { details: true })
+      await doc.applyEdits([TextEdit.insert(Position.create(0, 0), 'foo')])
+      let curr = await semanticTokens.getCurrentItem()
+      await curr.requestAllHighlights(CancellationToken.None, false)
+      let markers = await buf.getExtMarks(ns, 0, -1, {})
       expect(markers.length).toBeGreaterThan(0)
-      expect(markers[0][3].end_col).toBeGreaterThan(2)
     })
   })
 
   describe('checkState', () => {
     it('should throw for invalid state', async () => {
-      let doc = await helper.createDocument()
-      const fn = (cb: () => void) => {
-        let err
-        try {
-          cb()
-        } catch (e) {
-          err = e
-        }
-        expect(err).toBeDefined()
+      let doc = await workspace.document
+      const toThrow = (cb: () => void) => {
+        expect(cb).toThrow(Error)
       }
-      let item = highlighter.getItem(doc.bufnr)
-      fn(() => {
+      let item = semanticTokens.getItem(doc.bufnr)
+      toThrow(() => {
         item.checkState()
       })
       helper.updateConfiguration('semanticTokens.filetypes', ['*'])
-      fn(() => {
+      toThrow(() => {
         item.checkState()
       })
-      await nvim.command(`bd! ${doc.bufnr}`)
-      await helper.wait(10)
-      fn(() => {
+      toThrow(() => {
         item.checkState()
       })
+      let enabled = item.enabled
+      expect(enabled).toBe(false)
+      expect(() => {
+        item.checkState()
+      }).toThrow('provider not found')
+      registerProvider()
+    })
+  })
 
-      fn(() => {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        workspace._env.updateHighlight = false
-        item.checkState()
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        workspace._env.updateHighlight = true
-      })
+  describe('enabled', () => {
+    it('should check if buffer enabled for semanticTokens', async () => {
+      let doc = await workspace.document
+      let item = semanticTokens.getItem(doc.bufnr)
+      disposables.push(languages.registerDocumentRangeSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentRangeSemanticTokens: (_, range) => {
+          return {
+            data: []
+          }
+        }
+      }, { tokenModifiers: [], tokenTypes: [] }))
+      await item.onShown()
+      expect(item.enabled).toBe(false)
+      helper.updateConfiguration('semanticTokens.filetypes', ['vim'])
+      expect(item.enabled).toBe(false)
+      helper.updateConfiguration('semanticTokens.filetypes', ['*'])
+      expect(item.enabled).toBe(true)
+    })
+
+    it('should toggle enable by configuration', async () => {
+      helper.updateConfiguration('semanticTokens.enable', false)
+      let buf = await createRustBuffer()
+      let item = semanticTokens.getItem(buf.id)
+      helper.updateConfiguration('semanticTokens.enable', true)
+      await waitRefresh(item)
+      let markers = await buf.getExtMarks(ns, 0, -1, {})
+      expect(markers.length).toBeGreaterThan(0)
+      helper.updateConfiguration('semanticTokens.enable', false)
+      markers = await buf.getExtMarks(ns, 0, -1, {})
+      expect(markers.length).toBe(0)
+      helper.updateConfiguration('semanticTokens.enable', true)
+    })
+  })
+
+  describe('Server cancelled', () => {
+    it('should retrigger range request on server cancel', async () => {
+      helper.updateConfiguration('semanticTokens.filetypes', ['*'])
+      let times = 0
+      disposables.push(languages.registerDocumentRangeSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentRangeSemanticTokens: () => {
+          times++
+          if (times == 1) {
+            throw new CancellationError()
+          }
+          return {
+            data: []
+          }
+        }
+      }, { tokenModifiers: [], tokenTypes: [] }))
+      await helper.waitValue(() => {
+        return times
+      }, 2)
+    })
+
+    it('should retrigger full request on server cancel', async () => {
+      helper.updateConfiguration('semanticTokens.enable', true)
+      await workspace.document
+      let times = 0
+      disposables.push(languages.registerDocumentSemanticTokensProvider([{ language: '*' }], {
+        provideDocumentSemanticTokens: () => {
+          times++
+          if (times == 1) {
+            throw new CancellationError()
+          }
+          return {
+            data: []
+          }
+        }
+      }, { tokenModifiers: [], tokenTypes: [] }))
+      await helper.waitValue(() => {
+        return times
+      }, 2)
     })
   })
 })

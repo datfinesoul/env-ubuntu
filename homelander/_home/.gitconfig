@@ -13,7 +13,7 @@
 	whitespace = -trailing-space
 	ignorecase = true
 	excludesfile = /Users/phadviger/.gitignore_global
-	editor = /usr/local/bin/vim
+	editor = vim
 	pager = less -FXRS -x2
 [diff]
 	renames = copies
@@ -93,7 +93,7 @@
 [help]
 	format = html
 [web]
-	browser = gc
+	browser = ff
 [filter "lfs"]
 	clean = git-lfs clean %f
 	smudge = git-lfs smudge %f
@@ -107,13 +107,9 @@
 	fsckobjects = true
 [status]
 	relativePaths = false
-[browser "gc"]
-	cmd = "google-chrome"
 [browser "ff"]
-	cmd = open -a Firefox.app
+	cmd = "bash -c 'if [ \"$(uname)\" = \"Darwin\" ]; then open -a \"Firefox\" \"$1\"; else firefox \"$1\"; fi' --"
 [commit]
-	# relative to git repo root
-	template = ../../../.gitmessage
 	gpgsign = true
 	verbose = true
 ;[url "https://git@"]

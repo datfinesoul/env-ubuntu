@@ -1,6 +1,7 @@
 import { CancellationTokenSource, Disposable } from 'vscode-languageserver-protocol'
 import events from '../../events'
-import { disposeAll } from '../../util'
+import { disposeAll, wait } from '../../util'
+import { CancellationError } from '../../util/errors'
 
 const disposables: Disposable[] = []
 afterEach(async () => {
@@ -20,21 +21,46 @@ describe('register handler', () => {
     expect(fn).toBeCalledTimes(2)
   })
 
-  it('should change pumvisible', async () => {
-    expect(events.pumvisible).toBe(false)
-    await events.fire('MenuPopupChanged', [{
-      col: 6,
-      row: 2,
-      scrollbar: false,
-      completed_item: {},
-      width: 20,
-      height: 12,
-      size: 12
+  it('should not add insertChar with TextChangedI after PumInsert', async () => {
+    await events.fire('PumInsert', ['foo'])
+    let pre: string
+    events.on('TextChangedP', (_bufnr, info) => {
+      pre = info.pre
+    })
+    await events.fire('TextChangedI', [1, {
+      lnum: 1,
+      col: 4,
+      line: 'foo',
+      changedtick: 1,
     }])
-    expect(events.pumAlignTop).toBe(false)
-    expect(events.pumvisible).toBe(true)
-    await events.fire('CompleteDone', [{}])
-    expect(events.pumvisible).toBe(false)
+    expect(pre).toBe('foo')
+  })
+
+  it('should track slow handler', async () => {
+    let fn = jest.fn()
+    let spy = jest.spyOn(console, 'error').mockImplementation(() => {
+      fn()
+    })
+    events.on('BufWritePre', async () => {
+      await wait(50)
+    }, null, disposables)
+    events.timeout = 20
+    events.requesting = true
+    await events.fire('BufWritePre', [1, '', 1])
+    spy.mockRestore()
+    events.requesting = false
+    events.timeout = 1000
+    expect(fn).toBeCalled()
+  })
+
+  it('should on throw on handler error', async () => {
+    events.on('BufWritePre', async () => {
+      throw new Error('test error')
+    }, null, disposables)
+    events.on('BufWritePre', () => {
+      throw new CancellationError()
+    }, null, disposables)
+    await events.fire('BufWritePre', [1, '', 1])
   })
 
   it('should register single handler', async () => {
@@ -81,7 +107,8 @@ describe('register handler', () => {
       lnum: 1,
       col: 2,
       pre: 'i',
-      changedtick: 1
+      changedtick: 1,
+      line: 'i'
     }])
     expect(events.lastChangeTs).toBeDefined()
     await events.race(['TextInsert'])
@@ -101,6 +128,19 @@ describe('register handler', () => {
     expect(res.name).toBe('InsertCharPre')
     res = await events.race(['TextChanged'], 50)
     expect(res).toBeUndefined()
+  })
+
+  it('should race same events', async () => {
+    let arr: any[] = []
+    void events.race(['TextChangedI'], 200).then(res => {
+      arr.push(res)
+    })
+    void events.race(['TextChangedI'], 200).then(res => {
+      arr.push(res)
+    })
+    await events.fire('TextChangedI', [2, {}])
+    expect(arr.length).toBe(2)
+    expect(arr.map(o => o.name)).toEqual(['TextChangedI', 'TextChangedI'])
   })
 
   it('should cancel race by CancellationToken', async () => {

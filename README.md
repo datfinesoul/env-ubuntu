@@ -30,14 +30,37 @@ When asked to enter a "Title for your SSH key", please add something meaningful 
 
 ! First copy your one-time code: 46C9-00D4
 Press Enter to open github.com in your browser...
-Gtk-Message: 14:07:47.290: Failed to load module "canberra-gtk-module"
-Gtk-Message: 14:07:47.291: Failed to load module "canberra-gtk-module"
-[0806/140747.336375:WARNING:chrome_main_linux.cc(80)] Read channel stable from /app/extra/CHROME_VERSION_EXTRA
-[0806/140747.469930:WARNING:chrome_main_linux.cc(80)] Read channel stable from /app/extra/CHROME_VERSION_EXTRA
 Opening in existing browser session.
 ✓ Authentication complete.
 - gh config set -h github.com git_protocol ssh
 ✓ Configured git protocol
 ✓ Uploaded the SSH key to your GitHub account: /home/philip.hadviger/.ssh/id_ed25519.pub
 ✓ Logged in as datfinesoul
+```
+
+## Notes
+
+### Apple Keyboard
+
+- https://www.hashbangcode.com/article/turning-or-fn-mode-ubuntu-linux
+
+| Value | Function | Description |
+| - | - | - |
+| 0 | disabled | Disables the 'fn' key. This means that pressing F2 will trigger F2 to be pressed and not the special action key. Pressing 'fn' + F2 will just press the F2 key as normal. |
+| 1 | fkeyslast | Function keys are used as the last key. Pressing F2 will act as the special key. Pressing 'fn' + F2 will trigger F2. |
+| 2 | fkeysfirst | Function keys are used as the first key. Pressing F2 will act as triggering F2. Pressing 'fn' + F2 will act as the special key. |
+
+```bash
+echo 2 | sudo tee /sys/module/hid_apple/parameters/fnmode
+```
+
+### GTK
+
+```log
+Gtk-Message: 19:46:44.146: Not loading module "atk-bridge": The functionality is provided by GTK natively. Please try to not load it.
+```
+
+```bash
+# GTK_MODULES=gail:atk-bridge
+unset GTK_MODULES
 ```

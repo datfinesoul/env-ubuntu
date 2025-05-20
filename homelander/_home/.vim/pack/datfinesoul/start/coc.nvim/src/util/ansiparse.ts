@@ -1,4 +1,5 @@
-import { byteLength, upperFirst } from './string'
+'use strict'
+import { byteLength, toText, upperFirst } from './string'
 
 export interface AnsiItem {
   foreground?: string
@@ -149,7 +150,7 @@ export function ansiparse(str: string): AnsiItem[] {
     if (matchingControl != null) {
       if (matchingControl == '\x1b' && str[i] == '[') {
         //
-        // We've matched full control code. Lets start matching formating data.
+        // We've matched full control code. Lets start matching formatting data.
         //
 
         //
@@ -241,8 +242,14 @@ export function ansiparse(str: string): AnsiItem[] {
   }
 
   if (matchingText) {
-    state.text = matchingText + (matchingControl ? matchingControl : '')
+    state.text = matchingText + toText(matchingControl)
     result.push(state)
   }
   return result
+}
+
+export function stripAnsiColoring(str?: string): string {
+  // eslint-disable-next-line
+  const ansiColorCodeRegex = /\u001b\[[0-9;]*m/g
+  return str.replace(ansiColorCodeRegex, '')
 }

@@ -1,13 +1,15 @@
-import { Neovim } from '@chemzqm/neovim'
+import { Neovim } from '../../neovim'
 import os from 'os'
 import path from 'path'
-import { Diagnostic, DiagnosticSeverity, DiagnosticTag, Location, Range } from 'vscode-languageserver-protocol'
+import { Diagnostic, DiagnosticSeverity, DiagnosticTag, Location, Position, Range } from 'vscode-languageserver-protocol'
 import { URI } from 'vscode-uri'
 import manager from '../../diagnostic/manager'
 import { getNameFromSeverity, severityLevel } from '../../diagnostic/util'
 import Document from '../../model/document'
 import window from '../../window'
+import commands from '../../commands'
 import workspace from '../../workspace'
+import fs from 'fs'
 import helper, { createTmpFile } from '../helper'
 
 let nvim: Neovim
@@ -16,9 +18,11 @@ function createDiagnostic(msg: string, range?: Range, severity?: DiagnosticSever
   return Diagnostic.create(range, msg, severity || DiagnosticSeverity.Error)
 }
 
+let virtualTextSrcId: number
 beforeAll(async () => {
   await helper.setup()
   nvim = helper.nvim
+  virtualTextSrcId = await nvim.createNamespace('coc-diagnostic-virtualText')
 })
 
 afterAll(async () => {
@@ -46,20 +50,109 @@ async function createDocument(name?: string): Promise<Document> {
   diagnostics.push(createDiagnostic('hint', Range.create(1, 2, 1, 3), DiagnosticSeverity.Hint))
   diagnostics.push(createDiagnostic('error', Range.create(2, 0, 2, 2), DiagnosticSeverity.Error))
   collection.set(doc.uri, diagnostics)
+  await helper.waitValue(() => {
+    let buf = manager.getItem(doc.bufnr)
+    if (!buf.config.autoRefresh) return true
+    return buf.getDiagnosticsAt(Position.create(0, 0), true).length > 0
+  }, true)
   return doc
 }
 
 describe('diagnostic manager', () => {
+  describe('defineSigns', () => {
+    it('should defineSigns', () => {
+      manager.defineSigns({
+        enableHighlightLineNumber: false
+      })
+    })
+  })
+
   describe('setLocationlist()', () => {
     it('should set location list', async () => {
       let doc = await createDocument()
-      await manager.setLocationlist(doc.bufnr)
+      await helper.doAction('fillDiagnostics', doc.bufnr)
       let res = await nvim.call('getloclist', [doc.bufnr]) as any[]
       expect(res.length).toBeGreaterThan(2)
       helper.updateConfiguration('diagnostic.locationlistLevel', 'error')
       await manager.setLocationlist(doc.bufnr)
       res = await nvim.call('getloclist', [doc.bufnr]) as any[]
       expect(res.length).toBe(2)
+    })
+
+    it('should throw when buffer not attached', async () => {
+      await nvim.command(`vnew +setl\\ buftype=nofile`)
+      let doc = await workspace.document
+      let fn = async () => {
+        await manager.setLocationlist(doc.bufnr)
+      }
+      await expect(fn()).rejects.toThrow(/not/)
+    })
+  })
+
+  describe('events', () => {
+    it('should delay refresh when buffer visible', async () => {
+      let doc = await helper.createDocument()
+      await nvim.command('edit tmp')
+      let collection = manager.create('foo')
+      let diagnostics: Diagnostic[] = []
+      await doc.buffer.setLines(['foo bar foo bar', 'foo bar', 'foo', 'bar'], {
+        start: 0,
+        end: -1,
+        strictIndexing: false
+      })
+      await doc.synchronize()
+      diagnostics.push(createDiagnostic('error', Range.create(0, 2, 0, 4), DiagnosticSeverity.Error))
+      collection.set(doc.uri, diagnostics)
+      let buf = doc.buffer
+      let val = await buf.getVar('coc_diagnostic_info') as any
+      expect(val == null).toBe(true)
+      let ns = await nvim.createNamespace('coc-diagnosticfoo')
+      let markers = await buf.getExtMarks(ns, 0, -1)
+      expect(markers.length).toBe(0)
+      await nvim.command(`b ${buf.id}`)
+      await helper.waitFor('eval', ['empty(get(b:,"coc_diagnostic_info",{}))'], 0)
+      collection.dispose()
+    })
+
+    it('should delay refresh on InsertLeave', async () => {
+      let doc = await workspace.document
+      await nvim.input('i')
+      let collection = manager.create('foo')
+      let diagnostics: Diagnostic[] = []
+      await doc.buffer.setLines(['foo bar foo bar', 'foo bar', 'foo', 'bar'], {
+        start: 0,
+        end: -1,
+        strictIndexing: false
+      })
+      await doc.synchronize()
+      diagnostics.push(createDiagnostic('error', Range.create(0, 2, 0, 4), DiagnosticSeverity.Error))
+      collection.set(doc.uri, diagnostics)
+      let buf = doc.buffer
+      await helper.waitValue(async () => {
+        let val = await buf.getVar('coc_diagnostic_info') as any
+        return val == null
+      }, true)
+      let ns = await nvim.createNamespace('coc-diagnosticfoo')
+      let markers = await buf.getExtMarks(ns, 0, -1)
+      expect(markers.length).toBe(0)
+      await nvim.input('<esc>')
+      await helper.waitValue(async () => {
+        let markers = await buf.getExtMarks(ns, 0, -1)
+        return markers.length
+      }, 1)
+    })
+
+    it('should show diagnostic virtual text on CursorMoved', async () => {
+      helper.updateConfiguration('diagnostic.virtualText', true)
+      helper.updateConfiguration('diagnostic.virtualTextCurrentLineOnly', true)
+      let doc = await createDocument()
+      await helper.wait(30)
+      let markers = await doc.buffer.getExtMarks(virtualTextSrcId, 0, -1, { details: true })
+      await manager.toggleDiagnosticBuffer(doc.bufnr)
+      await nvim.call('cursor', [1, 3])
+      await helper.wait(30)
+      markers = await doc.buffer.getExtMarks(virtualTextSrcId, 0, -1, { details: true })
+      expect(markers.length).toBe(0)
     })
   })
 
@@ -82,74 +175,17 @@ describe('diagnostic manager', () => {
       collection.dispose()
       disposable.dispose()
     })
-
-    it('should delay refresh on InsertLeave', async () => {
-      let doc = await helper.createDocument()
-      await helper.wait(30)
-      await nvim.input('i')
-      let collection = manager.create('foo')
-      let diagnostics: Diagnostic[] = []
-      await doc.buffer.setLines(['foo bar foo bar', 'foo bar', 'foo', 'bar'], {
-        start: 0,
-        end: -1,
-        strictIndexing: false
-      })
-      await doc.synchronize()
-      diagnostics.push(createDiagnostic('error', Range.create(0, 2, 0, 4), DiagnosticSeverity.Error))
-      collection.set(doc.uri, diagnostics)
-      await helper.wait(30)
-      let buf = doc.buffer
-      let val = await buf.getVar('coc_diagnostic_info') as any
-      expect(val == null).toBe(true)
-      let ns = await nvim.createNamespace('coc-diagnosticfoo')
-      let markers = await buf.getExtMarks(ns, 0, -1)
-      expect(markers.length).toBe(0)
-      await nvim.input('<esc>')
-      await helper.wait(30)
-      markers = await buf.getExtMarks(ns, 0, -1)
-      expect(markers.length).toBe(1)
-    })
-
-    it('should delay refresh for hidden buffer', async () => {
-      let doc = await helper.createDocument()
-      await helper.edit()
-      let collection = manager.create('foo')
-      let diagnostics: Diagnostic[] = []
-      await doc.buffer.setLines(['foo bar foo bar', 'foo bar', 'foo', 'bar'], {
-        start: 0,
-        end: -1,
-        strictIndexing: false
-      })
-      await doc.synchronize()
-      diagnostics.push(createDiagnostic('error', Range.create(0, 2, 0, 4), DiagnosticSeverity.Error))
-      collection.set(doc.uri, diagnostics)
-      await helper.wait(50)
-      let buf = doc.buffer
-      let val = await buf.getVar('coc_diagnostic_info') as any
-      expect(val == null).toBe(true)
-      let ns = await nvim.createNamespace('coc-diagnosticfoo')
-      let markers = await buf.getExtMarks(ns, 0, -1)
-      expect(markers.length).toBe(0)
-      await nvim.command(`b ${buf.id}`)
-      await helper.wait(100)
-      markers = await buf.getExtMarks(ns, 0, -1)
-      expect(markers.length).toBe(1)
-    })
   })
 
   describe('toggleDiagnostic()', () => {
     it('should toggle diagnostics for all buffer', async () => {
+      await createDocument()
       let doc = await createDocument()
-      await helper.wait(50)
-      manager.toggleDiagnostic()
-      await helper.wait(50)
-      let val = await doc.buffer.getVar('coc_diagnostic_info') as any
-      expect(val).toBe(null)
-      manager.toggleDiagnostic()
-      await helper.wait(50)
-      val = await doc.buffer.getVar('coc_diagnostic_info') as any
-      expect(val).toBeDefined()
-      expect(val.error).toBe(2)
+      await helper.doAction('diagnosticToggle')
+      let item = manager.getItem(doc.bufnr)
+      expect(item.config.enable).toBe(false)
+      await manager.toggleDiagnostic(1)
+      expect(item.config.enable).toBe(true)
     })
   })
 
@@ -161,9 +197,11 @@ describe('diagnostic manager', () => {
       let doc = await helper.createDocument(fsPath)
       let diagnostics: Diagnostic[] = []
       diagnostics.push(createDiagnostic('error', Range.create(0, 0, 0, 1), DiagnosticSeverity.Error))
+      diagnostics.push(createDiagnostic('error', Range.create(0, 1, 0, 2), DiagnosticSeverity.Error))
       diagnostics.push(createDiagnostic('error', Range.create(0, 2, 0, 3), DiagnosticSeverity.Warning))
       collection.set(doc.uri, diagnostics)
-      let list = manager.getDiagnosticList()
+      collection.set('file:///1', [])
+      let list = await helper.doAction('diagnosticList')
       expect(list).toBeDefined()
       expect(list.length).toBeGreaterThanOrEqual(5)
       expect(list[0].severity).toBe('Error')
@@ -172,27 +210,40 @@ describe('diagnostic manager', () => {
     })
 
     it('should filter diagnostics by configuration', async () => {
-      let config = workspace.getConfiguration('diagnostic')
-      config.update('level', 'warning')
-      config.update('showUnused', false)
-      config.update('showDeprecated', false)
+      helper.updateConfiguration('diagnostic.level', 'warning')
+      helper.updateConfiguration('diagnostic.showUnused', false)
+      helper.updateConfiguration('diagnostic.showDeprecated', false)
       let doc = await createDocument()
-      let diagnostics = manager.getDiagnostics(doc.uri)['test']
+      let buf = manager.getItem(doc.bufnr)
+      let diagnostics = manager.getDiagnostics(buf)['test']
       diagnostics[0].tags = [DiagnosticTag.Unnecessary]
       diagnostics[2].tags = [DiagnosticTag.Deprecated]
-      let list = manager.getDiagnosticList()
+      let list = await manager.getDiagnosticList()
       expect(list.length).toBe(3)
-      let res = manager.getDiagnostics(doc.uri)['test']
+      let res = manager.getDiagnostics(buf)['test']
       expect(res.length).toBe(1)
-      let ranges = manager.getSortedRanges(doc.uri)
+      let ranges = manager.getSortedRanges(doc.uri, buf.config.level)
       expect(ranges.length).toBe(3)
+    })
+
+    it('should load file from disk ', async () => {
+      let fsPath = __filename
+      let collection = manager.create('test')
+      let diagnostics: Diagnostic[] = []
+      diagnostics.push(createDiagnostic('error', Range.create(0, 0, 0, 1), DiagnosticSeverity.Error))
+      let uri = URI.file(fsPath).toString()
+      collection.set(uri, diagnostics)
+      let arr: Diagnostic[] = []
+      arr.push(createDiagnostic('error', Range.create(1, 0, 1, 1), undefined))
+      collection.set('test:1', arr)
+      let list = await manager.getDiagnosticList()
+      expect(list.length).toBe(2)
     })
   })
 
   describe('preview()', () => {
     it('should not throw with empty diagnostics', async () => {
-      await helper.createDocument()
-      await manager.preview()
+      await helper.doAction('diagnosticPreview')
       let tabpage = await nvim.tabpage
       let wins = await tabpage.windows
       expect(wins.length).toBe(1)
@@ -208,42 +259,35 @@ describe('diagnostic manager', () => {
   })
 
   describe('setConfigurationErrors()', () => {
-    it('should set configuration errors', async () => {
-      let doc = await helper.createDocument()
-      let errors = [{
-        location: Location.create(doc.uri, Range.create(0, 0, 1, 0)),
-        message: 'foo',
-      }, {
-        location: Location.create(doc.uri, Range.create(1, 0, 2, 0)),
-        message: 'bar',
-      }]
-      manager.setConfigurationErrors(errors)
-      await helper.wait(50)
-      let res = manager.getDiagnostics(doc.uri)
-      expect(res.config.length).toBe(2)
-      manager.setConfigurationErrors()
-      await helper.wait(50)
-      res = manager.getDiagnostics(doc.uri)
-      expect(res.config).toBeUndefined()
+    it('should set configuration errors on refresh', async () => {
+      let file = path.join(os.tmpdir(), '69075963-48d6-4427-92db-287a09d5e976')
+      fs.writeFileSync(file, ']', 'utf8')
+      workspace.configurations.parseConfigurationModel(file)
+      let errors = workspace.configurations.errors
+      expect(errors.size).toBeGreaterThan(0)
+      let list = await manager.getDiagnosticList()
+      expect(list.length).toBe(1)
+      expect(list[0].file).toBe(file)
+      manager.checkConfigurationErrors()
+      fs.unlinkSync(file)
     })
   })
 
   describe('create()', () => {
     it('should create diagnostic collection', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       let collection = manager.create('test')
       collection.set(doc.uri, [createDiagnostic('foo')])
-      await helper.wait(50)
-      let info = await doc.buffer.getVar('coc_diagnostic_info')
-      expect(info).toBeDefined()
-      await nvim.command('bd!')
-      await helper.wait(50)
+      await helper.waitValue(async () => {
+        let info = await doc.buffer.getVar('coc_diagnostic_info')
+        return info != null
+      }, true)
     })
   })
 
   describe('getSortedRanges()', () => {
     it('should get sorted ranges of document', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       await nvim.call('setline', [1, ['a', 'b', 'c']])
       let collection = manager.create('test')
       let diagnostics: Diagnostic[] = []
@@ -251,53 +295,52 @@ describe('diagnostic manager', () => {
       diagnostics.push(createDiagnostic('y', Range.create(0, 1, 0, 2)))
       diagnostics.push(createDiagnostic('z', Range.create(1, 0, 1, 2)))
       collection.set(doc.uri, diagnostics)
-      let ranges = manager.getSortedRanges(doc.uri)
+      let item = manager.getItem(doc.bufnr)
+      let level = item.config.level
+      let ranges = manager.getSortedRanges(doc.uri, level)
       expect(ranges[0]).toEqual(Range.create(0, 0, 0, 1))
       expect(ranges[1]).toEqual(Range.create(0, 1, 0, 2))
       expect(ranges[2]).toEqual(Range.create(1, 0, 1, 2))
-      ranges = manager.getSortedRanges(doc.uri, 'error')
+      ranges = manager.getSortedRanges(doc.uri, level, 'error')
       expect(ranges.length).toBe(3)
-      expect(manager.getSortedRanges(doc.uri, 'warning').length).toBe(0)
+      expect(manager.getSortedRanges(doc.uri, level, 'warning').length).toBe(0)
     })
   })
 
   describe('getDiagnosticsInRange', () => {
     it('should get diagnostics in range', async () => {
-      let doc = await helper.createDocument()
-      let collection = manager.create('test')
-      let diagnostics: Diagnostic[] = []
-      await doc.buffer.setLines(['foo bar foo bar', 'foo bar'], {
-        start: 0,
-        end: -1,
-        strictIndexing: false
-      })
-      await doc.synchronize()
-      diagnostics.push(createDiagnostic('a', Range.create(0, 0, 0, 1)))
-      diagnostics.push(createDiagnostic('b', Range.create(0, 2, 0, 3)))
-      diagnostics.push(createDiagnostic('c', Range.create(1, 0, 1, 2)))
-      collection.set(doc.uri, diagnostics)
-      let res = manager.getDiagnosticsInRange(doc.textDocument, Range.create(0, 0, 0, 3))
-      expect(res.length).toBe(2)
+      let doc = await createDocument()
+      let res = manager.getDiagnosticsInRange(doc.textDocument, Range.create(0, 0, 1, 0))
+      expect(res.length).toBe(3)
+      doc = await helper.createDocument()
+      res = manager.getDiagnosticsInRange(doc.textDocument, Range.create(0, 0, 1, 0))
+      expect(res.length).toBe(0)
     })
   })
 
   describe('getCurrentDiagnostics', () => {
-    it('should get diagnostics under corsor', async () => {
-      let config = workspace.getConfiguration('diagnostic')
+    it('should get undefined when buffer not attached', async () => {
+      await nvim.command(`edit +setl\\ buftype=nofile tmp`)
+      let res = await manager.getCurrentDiagnostics()
+      await helper.doAction('diagnosticInfo')
+      expect(res).toBeUndefined()
+    })
+
+    it('should get diagnostics under cursor', async () => {
       await createDocument()
       let diagnostics = await manager.getCurrentDiagnostics()
       expect(diagnostics.length).toBe(0)
       await nvim.call('cursor', [1, 4])
       diagnostics = await manager.getCurrentDiagnostics()
       expect(diagnostics.length).toBe(1)
-      config.update('checkCurrentLine', true)
+      helper.updateConfiguration('diagnostic.checkCurrentLine', true)
       await nvim.call('cursor', [1, 2])
       diagnostics = await manager.getCurrentDiagnostics()
       expect(diagnostics.length).toBe(2)
     })
 
     it('should get empty diagnostic at end of line', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       await nvim.setLine('foo')
       doc.forceSync()
       await nvim.command('normal! $')
@@ -313,7 +356,7 @@ describe('diagnostic manager', () => {
     })
 
     it('should get diagnostic next to end of line', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       await nvim.setLine('foo')
       doc.forceSync()
       await nvim.command('normal! $')
@@ -328,7 +371,7 @@ describe('diagnostic manager', () => {
     })
 
     it('should get diagnostic with empty range at end of line', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       await nvim.setLine('foo')
       doc.forceSync()
       await nvim.command('normal! $')
@@ -343,7 +386,7 @@ describe('diagnostic manager', () => {
     })
 
     it('should get diagnostic pass end of the buffer lines', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       await nvim.setLine('foo')
       doc.forceSync()
       await nvim.command('normal! ^')
@@ -361,9 +404,9 @@ describe('diagnostic manager', () => {
 
   describe('jumpRelated', () => {
     it('should does nothing when no diagnostic exists', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       await nvim.call('cursor', [1, 1])
-      await manager.jumpRelated()
+      await commands.executeCommand('workspace.diagnosticRelated')
       let bufnr = await nvim.eval('bufnr("%")')
       expect(bufnr).toBe(doc.bufnr)
     })
@@ -377,7 +420,7 @@ describe('diagnostic manager', () => {
     })
 
     it('should jump to related position', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       let range = Range.create(0, 0, 0, 10)
       let location = Location.create(URI.file(__filename).toString(), range)
       let diagnostic = Diagnostic.create(range, 'msg', DiagnosticSeverity.Error, 1000, 'test',
@@ -387,13 +430,12 @@ describe('diagnostic manager', () => {
       await manager.refreshBuffer(doc.uri)
       await nvim.call('cursor', [1, 1])
       await manager.jumpRelated()
-      await helper.wait(100)
       let bufname = await nvim.call('bufname', '%')
       expect(bufname).toMatch('diagnosticManager')
     })
 
     it('should open location list', async () => {
-      let doc = await helper.createDocument()
+      let doc = await workspace.document
       let range = Range.create(0, 0, 0, 10)
       let diagnostic = Diagnostic.create(range, 'msg', DiagnosticSeverity.Error, 1000, 'test',
         [{
@@ -417,34 +459,55 @@ describe('diagnostic manager', () => {
     it('should jump to previous', async () => {
       let doc = await createDocument()
       await nvim.command('normal! G$')
-      let ranges = manager.getSortedRanges(doc.uri)
+      let ranges = manager.getSortedRanges(doc.uri, undefined)
       ranges.reverse()
       for (let i = 0; i < ranges.length; i++) {
         await manager.jumpPrevious()
         let pos = await window.getCursorPosition()
         expect(pos).toEqual(ranges[i].start)
       }
-      await manager.jumpPrevious()
+      await helper.doAction('diagnosticPrevious')
     })
 
     it('should jump to next', async () => {
       let doc = await createDocument()
       await nvim.call('cursor', [0, 0])
-      let ranges = manager.getSortedRanges(doc.uri)
+      let ranges = manager.getSortedRanges(doc.uri, undefined)
       for (let i = 0; i < ranges.length; i++) {
         await manager.jumpNext()
         let pos = await window.getCursorPosition()
         expect(pos).toEqual(ranges[i].start)
       }
-      await manager.jumpNext()
+      await helper.doAction('diagnosticNext')
     })
 
-    it('should not throw for buffer not attached', async () => {
-      await nvim.command('edit foo | setl buftype=nofile')
+    it('should consider invalid position', async () => {
+      let doc = await helper.createDocument('foo.js')
+      let collection = manager.create('foo')
+      let diagnostics: Diagnostic[] = []
+      await doc.buffer.setLines(['foo bar', '', 'foo', 'bar'], {
+        start: 0,
+        end: -1,
+        strictIndexing: false
+      })
+      await nvim.call('cursor', [2, 0])
+      await doc.synchronize()
+      diagnostics.push(createDiagnostic('error', Range.create(0, 1, 0, 2), DiagnosticSeverity.Error))
+      diagnostics.push(createDiagnostic('warning', Range.create(1, 1, 1, 1), DiagnosticSeverity.Warning))
+      diagnostics.push(createDiagnostic('warning', Range.create(2, 1, 2, 1), DiagnosticSeverity.Warning))
+      collection.set(doc.uri, diagnostics)
+      await manager.jumpNext()
+      let pos = await window.getCursorPosition()
+      expect(pos).toEqual(Position.create(2, 1))
+    })
+
+    it('should not throw when buffer not attached', async () => {
       let doc = await workspace.document
+      await manager.jumpNext()
+      await nvim.command('edit foo | setl buftype=nofile')
+      doc = await workspace.document
       expect(doc.attached).toBe(false)
       await manager.jumpNext()
-      await manager.jumpPrevious()
     })
 
     it('should respect wrapscan', async () => {
@@ -463,9 +526,8 @@ describe('diagnostic manager', () => {
 
   describe('diagnostic configuration', () => {
     it('should use filetype map from config', async () => {
-      let config = workspace.getConfiguration('diagnostic')
-      config.update('filetypeMap', { default: 'bufferType' })
-      config.update('messageDelay', 10)
+      helper.updateConfiguration('diagnostic.filetypeMap', { default: 'bufferType' })
+      helper.updateConfiguration('diagnostic.messageDelay', 10)
       let doc = await createDocument('foo.js')
       await nvim.setLine('foo')
       await doc.synchronize()
@@ -477,22 +539,19 @@ describe('diagnostic manager', () => {
       let diagnostics = [diagnostic]
       collection.set(doc.uri, diagnostics)
       await nvim.call('cursor', [1, 2])
-      await manager.echoMessage(false)
+      await manager.echoCurrentMessage()
       let win = await helper.getFloat()
-      await nvim.call('win_gotoid', [win.id])
-      await nvim.command('normal! $')
-      let res = await nvim.eval('synIDattr(synID(line("."),col("."),1),"name")')
-      expect(res).toMatch(/javascript/i)
-      await nvim.command('q')
+      let bufnr = await nvim.call('winbufnr', [win.id]) as number
+      let buf = nvim.createBuffer(bufnr)
+      let lines = await buf.lines
+      expect(lines.join('\n')).toMatch('www.example.com')
     })
 
     it('should show floating window on cursor hold', async () => {
-      let config = workspace.getConfiguration('diagnostic')
-      config.update('messageTarget', 'float')
-      config.update('messageDelay', 10)
+      helper.updateConfiguration('diagnostic.messageTarget', 'float')
+      helper.updateConfiguration('diagnostic.messageDelay', 10)
       await createDocument()
       await nvim.call('cursor', [1, 3])
-      await nvim.command('doautocmd CursorHold')
       let winid = await helper.waitFloat()
       let bufnr = await nvim.call('nvim_win_get_buf', winid) as number
       let buf = nvim.createBuffer(bufnr)
@@ -501,30 +560,37 @@ describe('diagnostic manager', () => {
     })
 
     it('should filter diagnostics by messageLevel', async () => {
-      let config = workspace.getConfiguration('diagnostic')
-      config.update('messageLevel', 'error')
-      config.update('messageTarget', 'echo')
+      helper.updateConfiguration('diagnostic.messageLevel', 'error')
+      helper.updateConfiguration('diagnostic.messageTarget', 'echo')
       await createDocument()
       await nvim.call('cursor', [1, 6])
-      await manager.echoMessage(false)
+      await manager.echoCurrentMessage()
       let line = await helper.getCmdline()
       expect(line.indexOf('warning')).toBe(-1)
     })
 
     it('should echo messages on CursorHold', async () => {
+      helper.updateConfiguration('diagnostic.messageTarget', 'echo')
       await createDocument()
-      let config = workspace.getConfiguration('diagnostic')
-      config.update('messageTarget', 'echo')
-      config.update('messageDelay', 1)
       await nvim.call('cursor', [1, 3])
-      await helper.wait(50)
+      await helper.waitValue(async () => {
+        let line = await helper.getCmdline()
+        return line.length > 0
+      }, true)
+    })
+
+    it('should not echo messages on CursorHold', async () => {
+      await nvim.command('echo ""')
+      helper.updateConfiguration('diagnostic.enableMessage', 'never')
+      await createDocument()
+      await nvim.call('cursor', [1, 3])
+      await helper.wait(30)
       let line = await helper.getCmdline()
-      expect(line).toMatch('error')
+      expect(line).toBe('')
     })
 
     it('should show diagnostics of current line', async () => {
       helper.updateConfiguration('diagnostic.checkCurrentLine', true)
-      helper.updateConfiguration('diagnostic.messageDelay', 1)
       await createDocument()
       await nvim.call('cursor', [1, 3])
       let winid = await helper.waitFloat()
@@ -537,7 +603,8 @@ describe('diagnostic manager', () => {
     it('should filter diagnostics by level', async () => {
       helper.updateConfiguration('diagnostic.level', 'warning')
       let doc = await createDocument()
-      let diagnosticsMap = manager.getDiagnostics(doc.uri)
+      let item = manager.getItem(doc.bufnr)
+      let diagnosticsMap = manager.getDiagnostics(item)
       for (let diagnostics of Object.values(diagnosticsMap)) {
         for (let diagnostic of diagnostics) {
           expect(diagnostic.severity != DiagnosticSeverity.Hint).toBe(true)
@@ -557,14 +624,27 @@ describe('diagnostic manager', () => {
       let file = await createTmpFile(content)
       await nvim.command(`source ${file}`)
       await createDocument()
-      await helper.wait(50)
-      let items = await nvim.getVar('items') as any[]
-      expect(Array.isArray(items)).toBe(true)
-      expect(items.length).toBeGreaterThan(0)
+      await helper.waitValue(async () => {
+        let items = await nvim.getVar('items') as any
+        return Array.isArray(items)
+      }, true)
       await nvim.command('bd!')
-      await helper.wait(50)
-      items = await nvim.getVar('items') as any[]
-      expect(items).toEqual([])
+      await helper.waitFor('eval', ['get(g:,"items",[])'], [])
+    })
+
+    it('should send to vim.diagnostic', async () => {
+      helper.updateConfiguration('diagnostic.displayByVimDiagnostic', true)
+
+      let doc = await createDocument()
+      let buf = nvim.createBuffer(doc.bufnr)
+      let items = await buf.getVar('coc_diagnostic_map') as any
+      expect(items.length).toBe(5)
+
+      let res = await nvim.lua('return vim.diagnostic.get()') as any[]
+      expect(res.length).toBe(5)
+      expect(res[0].severity).toBe(1)
+      expect(res[0].message).toBe('error')
+      expect(res[1].source).toBe('test')
     })
   })
 
@@ -584,31 +664,35 @@ describe('diagnostic manager', () => {
 
   describe('toggleDiagnosticBuffer', () => {
     it('should not throw when bufnr is invliad or disabled', async () => {
-      let doc = await helper.createDocument()
-      await manager.toggleDiagnosticBuffer(99)
+      let doc = await workspace.document
+      await helper.doAction('diagnosticToggleBuffer', 99)
       helper.updateConfiguration('diagnostic.enable', false)
       await manager.toggleDiagnosticBuffer(doc.bufnr)
     })
 
+    it('should toggle current buffer', async () => {
+      let doc = await workspace.document
+      await manager.toggleDiagnosticBuffer()
+      let buf = nvim.createBuffer(doc.bufnr)
+      let res = await buf.getVar('coc_diagnostic_disable') as any
+      expect(res).toBe(1)
+    })
+
     it('should toggle diagnostics for buffer', async () => {
       let doc = await createDocument()
-      // required to wait refresh finish
-      await helper.wait(50)
       await manager.toggleDiagnosticBuffer(doc.bufnr)
       let buf = nvim.createBuffer(doc.bufnr)
       let res = await buf.getVar('coc_diagnostic_info') as any
       expect(res == null).toBe(true)
-      await manager.toggleDiagnosticBuffer(doc.bufnr)
-      await helper.wait(50)
+      await manager.toggleDiagnosticBuffer(doc.bufnr, 1)
       res = await buf.getVar('coc_diagnostic_info') as any
       expect(res.error).toBe(2)
     })
   })
 
   describe('refresh', () => {
-    let config = workspace.getConfiguration('diagnostic')
     beforeEach(() => {
-      config.update('autoRefresh', false)
+      helper.updateConfiguration('diagnostic.autoRefresh', false)
     })
 
     it('should refresh by bufnr', async () => {
@@ -617,20 +701,21 @@ describe('diagnostic manager', () => {
       let res = await buf.getVar('coc_diagnostic_info') as any
       // should not refresh
       expect(res == null).toBe(true)
-      manager.refresh(doc.bufnr)
-      await helper.wait(50)
-      res = await buf.getVar('coc_diagnostic_info') as any
-      expect(res?.error).toBe(2)
-      manager.refresh(99)
+      await manager.refresh(doc.bufnr)
+      await helper.waitValue(async () => {
+        let res = await buf.getVar('coc_diagnostic_info') as any
+        return res?.error
+      }, 2)
+      await manager.refresh(99)
     })
 
     it('should refresh all buffers', async () => {
       let uris = ['one', 'two'].map(s => URI.file(path.join(os.tmpdir(), s)).toString())
-      await workspace.loadFiles(uris)
+      await workspace.loadFile(uris[0], 'tabe')
+      await workspace.loadFile(uris[1], 'tabe')
       let collection = manager.create('tmp')
       collection.set([[uris[0], [createDiagnostic('Error one')]], [uris[1], [createDiagnostic('Error two')]]])
-      manager.refresh()
-      await helper.wait(50)
+      await helper.doAction('diagnosticRefresh')
       let bufnrs = [workspace.getDocument(uris[0]).bufnr, workspace.getDocument(uris[1]).bufnr]
       for (let bufnr of bufnrs) {
         let buf = nvim.createBuffer(bufnr)

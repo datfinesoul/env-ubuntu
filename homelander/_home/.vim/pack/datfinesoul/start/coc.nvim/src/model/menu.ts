@@ -1,12 +1,12 @@
-import { Buffer, Neovim } from '@chemzqm/neovim'
-import { CancellationToken, Disposable, Emitter, Event } from 'vscode-languageserver-protocol'
+'use strict'
+import { Buffer, Neovim } from '../neovim'
+import { CancellationToken, Disposable, Emitter, Event } from '../util/protocol'
 import events from '../events'
 import { HighlightItem } from '../types'
 import { disposeAll } from '../util'
 import { byteLength, isAlphabet } from '../util/string'
 import { DialogPreferences } from './dialog'
 import Popup from './popup'
-const logger = require('../util/logger')('model-menu')
 
 export interface MenuItem {
   text: string
@@ -16,12 +16,19 @@ export interface MenuItem {
 export interface MenuConfig {
   items: string[] | MenuItem[]
   title?: string
+  content?: string
   shortcuts?: boolean
+  position?: 'cursor' | 'center'
+  borderhighlight?: string
 }
 
 export function isMenuItem(item: any): item is MenuItem {
   if (!item) return false
   return typeof item.text === 'string'
+}
+
+export function toIndexText(n: number): string {
+  return n < 99 ? `${n + 1}. ` : '  '
 }
 
 /**
@@ -31,6 +38,7 @@ export default class Menu {
   private bufnr: number
   private win: Popup
   private currIndex = 0
+  private contentHeight = 0
   private total: number
   private disposables: Disposable[] = []
   private keyMappings: Map<string, (character: string) => void> = new Map()
@@ -42,12 +50,8 @@ export default class Menu {
     this.total = config.items.length
     if (token) {
       token.onCancellationRequested(() => {
-        if (this.win) {
-          this.win?.close()
-        } else {
-          this._onDidClose.fire(-1)
-          this.dispose()
-        }
+        this._onDidClose.fire(-1)
+        this.dispose()
       })
     }
     this.disposables.push(this._onDidClose)
@@ -74,26 +78,24 @@ export default class Menu {
       this.selectCurrent()
     })
     let setCursorIndex = idx => {
-      if (!this.win) return
       nvim.pauseNotification()
-      this.setCursor(idx)
-      this.win?.refreshScrollbar()
+      this.setCursor(idx + this.contentHeight)
+      this.win.refreshScrollbar()
       nvim.command('redraw', true)
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       nvim.resumeNotification(false, true)
     }
     this.addKeys('<C-f>', async () => {
-      await this.win?.scrollForward()
+      await this.win.scrollForward()
     })
     this.addKeys('<C-b>', async () => {
-      await this.win?.scrollBackward()
+      await this.win.scrollBackward()
     })
-    this.addKeys(['j', '<down>', '<tab>', '<C-n>'], () => {
+    this.addKeys(['j', '<C-j>', '<down>', '<tab>', '<C-n>'], () => {
       // next
       let idx = this.currIndex == this.total - 1 ? 0 : this.currIndex + 1
       setCursorIndex(idx)
     })
-    this.addKeys(['k', '<up>', '<s-tab>', '<C-p>'], () => {
+    this.addKeys(['k', '<C-k>', '<up>', '<s-tab>', '<C-p>'], () => {
       // previous
       let idx = this.currIndex == 0 ? this.total - 1 : this.currIndex - 1
       setCursorIndex(idx)
@@ -164,20 +166,31 @@ export default class Menu {
     return false
   }
 
-  public async show(preferences: DialogPreferences = {}): Promise<number> {
+  public async show(preferences: DialogPreferences = {}): Promise<void> {
     let { nvim, shortcutIndexes } = this
-    let { title, items } = this.config
+    let { title, items, borderhighlight, position, content } = this.config
     let opts: any = {}
     if (title) opts.title = title
+    if (position === 'center') opts.relative = 'editor'
     if (preferences.maxHeight) opts.maxHeight = preferences.maxHeight
     if (preferences.maxWidth) opts.maxWidth = preferences.maxWidth
     if (preferences.floatHighlight) opts.highlight = preferences.floatHighlight
-    if (preferences.floatBorderHighlight) opts.borderhighlight = [preferences.floatBorderHighlight]
+    if (borderhighlight) {
+      opts.borderhighlight = borderhighlight
+    } else if (preferences.floatBorderHighlight) {
+      opts.borderhighlight = preferences.floatBorderHighlight
+    }
+    if (preferences.rounded) opts.rounded = 1
+    if (typeof content === 'string') opts.content = content
+    if (preferences.confirmKey) {
+      this.addKeys(preferences.confirmKey, () => {
+        this.selectCurrent()
+      })
+    }
     let highlights: HighlightItem[] = []
     let lines = items.map((v, i) => {
       let text: string = isMenuItem(v) ? v.text : v
-      let pre = i < 99 ? `${i + 1}. ` : ''
-      // if (i < 99) return `${i + 1}. ${text.trim()}`
+      let pre = toIndexText(i)
       if (shortcutIndexes.has(i)) {
         highlights.push({
           lnum: i,
@@ -200,19 +213,14 @@ export default class Menu {
       }
     })
     if (highlights.length) opts.highlights = highlights
-    if (preferences.confirmKey && preferences.confirmKey != '<cr>') {
-      this.addKeys(preferences.confirmKey, () => {
-        this.selectCurrent()
-      })
-    }
-    let res = await nvim.call('coc#float#create_menu', [lines, opts]) as [number, number]
+    let [winid, bufnr, contentHeight] = await nvim.call('coc#dialog#create_menu', [lines, opts]) as [number, number, number]
     nvim.command('redraw', true)
     if (this._disposed) return
-    this.win = new Popup(nvim, res[0], res[1])
-    this.bufnr = res[1]
+    this.win = new Popup(nvim, winid, bufnr, lines.length + contentHeight, contentHeight)
+    this.bufnr = bufnr
+    this.contentHeight = contentHeight
     this.attachEvents()
     nvim.call('coc#prompt#start_prompt', ['menu'], true)
-    return res[0]
   }
 
   private selectCurrent(): void {
@@ -220,7 +228,6 @@ export default class Menu {
       let item = this.config.items[this.currIndex] as MenuItem
       if (item.disabled['reason']) {
         this.nvim.outWriteLine(`Item disabled: ${item.disabled['reason']}`)
-        // this.nvim.command('redraw', true)
       }
       return
     }
@@ -233,6 +240,7 @@ export default class Menu {
   }
 
   public dispose(): void {
+    if (this._disposed) return
     this._disposed = true
     disposeAll(this.disposables)
     this.shortcutIndexes.clear()
@@ -243,19 +251,14 @@ export default class Menu {
     this.win = undefined
   }
 
-  private async onInputChar(session: string, character: string): Promise<void> {
+  public async onInputChar(session: string, character: string): Promise<void> {
     if (session != 'menu' || !this.win) return
     let fn = this.keyMappings.get(character)
-    if (fn) {
-      await Promise.resolve(fn(character))
-    } else {
-      logger.warn(`Ignored key press: ${character}`)
-    }
+    if (fn) await Promise.resolve(fn(character))
   }
 
   private setCursor(index: number): void {
-    if (!this.win) return
-    this.currIndex = index
+    this.currIndex = index - this.contentHeight
     this.win.setCursor(index)
   }
 

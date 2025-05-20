@@ -1,15 +1,16 @@
-import { Neovim } from '@chemzqm/neovim'
-import FloatFactory from '../../model/floatFactory'
+import { Neovim } from '../../neovim'
+import events from '../../events'
+import FloatFactoryImpl from '../../model/floatFactory'
 import snippetManager from '../../snippets/manager'
 import { Documentation } from '../../types'
 import helper from '../helper'
 
 let nvim: Neovim
-let floatFactory: FloatFactory
+let floatFactory: FloatFactoryImpl
 beforeAll(async () => {
   await helper.setup()
   nvim = helper.nvim
-  floatFactory = new FloatFactory(nvim)
+  floatFactory = new FloatFactoryImpl(nvim)
 })
 
 afterAll(async () => {
@@ -24,6 +25,18 @@ afterEach(async () => {
 
 describe('FloatFactory', () => {
   describe('show()', () => {
+    it('should close after create window', async () => {
+      let docs: Documentation[] = [{
+        filetype: 'markdown',
+        content: 'f'
+      }]
+      let p = floatFactory.show(docs, { shadow: true, focusable: true, rounded: true, border: [1, 1, 1, 1] })
+      floatFactory.close()
+      await helper.wait(10)
+      let win = floatFactory.window
+      expect(win).toBeNull()
+    })
+
     it('should show window', async () => {
       expect(floatFactory.window).toBe(null)
       expect(floatFactory.buffer).toBe(null)
@@ -32,13 +45,39 @@ describe('FloatFactory', () => {
         filetype: 'markdown',
         content: 'f'.repeat(81)
       }]
-      await floatFactory.show(docs)
+      await floatFactory.show(docs, { rounded: true })
       expect(floatFactory.window).toBeDefined()
       expect(floatFactory.buffer).toBeDefined()
       let hasFloat = await nvim.call('coc#float#has_float')
       expect(hasFloat).toBe(1)
       await floatFactory.show([{ filetype: 'txt', content: '' }])
       expect(floatFactory.window).toBe(null)
+    })
+
+    it('should close when MenuPopupChanged', async () => {
+      let docs: Documentation[] = [{
+        filetype: 'markdown',
+        content: 'f'.repeat(81)
+      }]
+      await floatFactory.show(docs, { focusable: true })
+      await events.fire('BufEnter', [floatFactory.bufnr])
+      let ev = {
+        row: 21,
+        startcol: 0,
+        index: 0,
+        word: '',
+        height: 1,
+        width: 1,
+        col: 10,
+        size: 1,
+        scrollbar: true,
+        inserted: true,
+        move: false,
+      }
+      await events.fire('MenuPopupChanged', [ev, 22])
+      await events.fire('MenuPopupChanged', [ev, 20])
+      expect(floatFactory.window).toBeNull()
+      floatFactory.close()
     })
 
     it('should create window', async () => {
@@ -128,7 +167,7 @@ describe('FloatFactory', () => {
   describe('checkRetrigger', () => {
     it('should check retrigger', async () => {
       expect(floatFactory.checkRetrigger(99)).toBe(false)
-      let bufnr = await nvim.call('bufnr', ['%'])
+      let bufnr = await nvim.call('bufnr', ['%']) as number
       let docs: Documentation[] = [{
         filetype: 'markdown',
         content: 'f'
@@ -197,26 +236,31 @@ describe('FloatFactory', () => {
       }]
       await floatFactory.show(docs)
       await nvim.command(`edit foo`)
-      await helper.wait(50)
-      let hasFloat = await nvim.call('coc#float#has_float')
-      expect(hasFloat).toBe(0)
+      await helper.waitFor('coc#float#has_float', [], 0)
+    })
+
+    it('should not hide when not moved', async () => {
+      let bufnr = await nvim.call('bufnr', ['%']) as number
+      let docs: Documentation[] = [{
+        filetype: 'markdown',
+        content: 'foo'
+      }]
+      await floatFactory.show(docs, { focusable: false })
+      floatFactory._onCursorMoved(false, bufnr, [1, 1])
     })
 
     it('should hide on CursorMoved', async () => {
-      await helper.createDocument()
+      let doc = await helper.createDocument()
+      await nvim.input('i')
       await nvim.setLine('foo')
       let docs: Documentation[] = [{
         filetype: 'markdown',
         content: 'foo'
       }]
       await floatFactory.show(docs)
-      let hasFloat = await nvim.call('coc#float#has_float')
-      expect(hasFloat).toBe(1)
-      await helper.wait(30)
-      await nvim.input('$')
-      await helper.wait(200)
-      hasFloat = await nvim.call('coc#float#has_float')
-      expect(hasFloat).toBe(0)
+      await helper.waitFloat()
+      floatFactory._onCursorMoved(true, doc.bufnr, [3, 3])
+      await helper.waitFor('coc#float#has_float', [], 0)
     })
 
     it('should not hide when cursor position not changed', async () => {
@@ -228,20 +272,23 @@ describe('FloatFactory', () => {
         content: 'foo'
       }]
       await floatFactory.show(docs)
-      await nvim.call('cursor', [1, 2])
+      floatFactory._onCursorMoved(false, floatFactory.bufnr, [1, 1])
+      await nvim.call('cursor', cursor)
       await helper.wait(10)
       await nvim.call('cursor', cursor)
-      await helper.wait(200)
-      let hasFloat = await nvim.call('coc#float#has_float')
-      expect(hasFloat).toBe(1)
+      await helper.wait(10)
+      await helper.waitFor('coc#float#has_float', [], 1)
     })
 
     it('should preserve float when autohide disable and not overlap with pum', async () => {
-      await helper.createDocument()
-      let buf = await nvim.buffer
-      await buf.setLines(['foo', '', '', '', 'f'], { start: 0, end: -1, strictIndexing: false })
-      await nvim.call('cursor', [5, 2])
+      let doc = await helper.createDocument()
+      await doc.buffer.setLines(['foo', '', '', '', 'f'], { start: 0, end: -1, strictIndexing: false })
+      await doc.synchronize()
+      await nvim.call('cursor', [5, 1])
       await nvim.input('A')
+      await helper.wait(50)
+      nvim.call('coc#start', [], true)
+      await helper.waitPopup()
       let docs: Documentation[] = [{
         filetype: 'markdown',
         content: 'foo'
@@ -251,12 +298,6 @@ describe('FloatFactory', () => {
         autoHide: false
       })
       let activated = await floatFactory.activated()
-      expect(activated).toBe(true)
-      await nvim.input('<C-n>')
-      await helper.wait(100)
-      let pumvisible = await helper.pumvisible()
-      expect(pumvisible).toBe(true)
-      activated = await floatFactory.activated()
       expect(activated).toBe(true)
     })
   })

@@ -1,39 +1,37 @@
-import { Buffer, Neovim } from '@chemzqm/neovim'
-import debounce from 'debounce'
-import { Disposable, Emitter, Event, Position, Range, TextEdit } from 'vscode-languageserver-protocol'
-import { TextDocument } from 'vscode-languageserver-textdocument'
+'use strict'
+import { Buffer, Neovim, VimValue } from '../neovim'
+import { Buffer as NodeBuffer } from 'buffer'
+import { Position, Range, TextEdit } from 'vscode-languageserver-types'
 import { URI } from 'vscode-uri'
-import events from '../events'
-import { BufferOption, DidChangeTextDocumentParams, HighlightItem, HighlightItemOption } from '../types'
-import { diffLines, getChange } from '../util/diff'
-import { disposeAll, getUri, wait, waitNextTick } from '../util/index'
-import { equals } from '../util/object'
-import { emptyRange } from '../util/position'
-import { byteIndex, byteLength, byteSlice } from '../util/string'
-import { getWellformedEdit, mergeSort } from '../util/textedit'
+import events, { InsertChange } from '../events'
+import { BufferOption, DidChangeTextDocumentParams, HighlightItem, HighlightItemOption, TextDocumentContentChange } from '../types'
+import { isVim } from '../util/constants'
+import { diffLines, getTextEdit } from '../util/diff'
+import { disposeAll, getConditionValue, wait, waitNextTick } from '../util/index'
+import { isUrl } from '../util/is'
+import { debounce, path } from '../util/node'
+import { equals, toObject } from '../util/object'
+import { comparePosition, emptyRange } from '../util/position'
+import { Disposable, Emitter, Event } from '../util/protocol'
+import { byteIndex, byteLength, byteSlice, characterIndex, toText } from '../util/string'
+import { applyEdits, filterSortEdits, getPositionFromEdits, getStartLine, mergeTextEdits, TextChangeItem, toTextChanges } from '../util/textedit'
 import { Chars } from './chars'
 import { LinesTextDocument } from './textdocument'
-const logger = require('../util/logger')('model-document')
 
 export type LastChangeType = 'insert' | 'change' | 'delete'
 
-/**
- * newText, startLine, startCol, endLine, endCol
- */
-export type TextChangeItem = [string[], number, number, number, number]
-
 export interface Env {
   readonly filetypeMap: { [index: string]: string }
-  readonly isVim: boolean
   readonly isCygwin: boolean
 }
 
 export interface ChangeInfo {
-  bufnr: number
   lnum: number
   line: string
   changedtick: number
 }
+
+const debounceTime = getConditionValue(150, 15)
 
 // getText, positionAt, offsetAt
 export default class Document {
@@ -41,15 +39,18 @@ export default class Document {
   public isIgnored = false
   public chars: Chars
   private eol = true
+  private _noFetch: boolean
   private _disposed = false
   private _attached = false
+  private _notAttachReason = ''
   private _previewwindow = false
   private _winid = -1
   private _filetype: string
+  private _bufname: string
+  private _commandLine = false
   private _uri: string
   private _changedtick: number
-  private _words: string[] = []
-  private variables: { [key: string]: any }
+  private variables: { [key: string]: VimValue }
   private disposables: Disposable[] = []
   private _textDocument: LinesTextDocument
   // real current lines
@@ -66,10 +67,10 @@ export default class Document {
   ) {
     this.fireContentChanges = debounce(() => {
       this._fireContentChanges()
-    }, global.__TEST__ ? 20 : 150)
+    }, debounceTime)
     this.fetchContent = debounce(() => {
       void this._fetchContent()
-    }, 100)
+    }, debounceTime)
     this.init(opts)
   }
 
@@ -105,6 +106,10 @@ export default class Document {
     return this.buffer.id
   }
 
+  public get bufname(): string {
+    return this._bufname
+  }
+
   public get filetype(): string {
     return this._filetype
   }
@@ -114,18 +119,7 @@ export default class Document {
   }
 
   public get isCommandLine(): boolean {
-    return this.uri && this.uri.endsWith('%5BCommand%20Line%5D')
-  }
-
-  public get enabled(): boolean {
-    return this.getVar('enabled', true)
-  }
-
-  /**
-   * All words, extracted by `iskeyword` option.
-   */
-  public get words(): string[] {
-    return this._words
+    return this._commandLine
   }
 
   /**
@@ -159,7 +153,7 @@ export default class Document {
         return 'latex'
       default: {
         let map = this.env.filetypeMap
-        return map[filetype] || filetype
+        return String(map[filetype] || filetype)
       }
     }
   }
@@ -186,8 +180,7 @@ export default class Document {
   }
 
   /**
-   * Returns if current document is opended with previewwindow
-   *
+   * Returns if current document is opened with previewwindow
    * @deprecated
    */
   public get previewwindow(): boolean {
@@ -199,41 +192,53 @@ export default class Document {
    */
   private init(opts: BufferOption): void {
     let buftype = this.buftype = opts.buftype
+    this._bufname = opts.bufname
+    this._commandLine = opts.commandline === 1
     this._previewwindow = !!opts.previewwindow
     this._winid = opts.winid
-    this.variables = opts.variables || {}
+    this.variables = toObject(opts.variables)
     this._changedtick = opts.changedtick
     this.eol = opts.eol == 1
     this._uri = getUri(opts.fullpath, this.bufnr, buftype, this.env.isCygwin)
     if (Array.isArray(opts.lines)) {
-      this.lines = opts.lines
+      this.lines = opts.lines.map(line => line == null ? '' : line)
+      this._noFetch = true
       this._attached = true
       this.attach()
+    } else {
+      this.lines = []
+      this._notAttachReason = getNotAttachReason(buftype, this.variables[`coc_enabled`] as number, opts.size)
     }
     this._filetype = this.convertFiletype(opts.filetype)
-    this.setIskeyword(opts.iskeyword)
+    this.setIskeyword(opts.iskeyword, opts.lisp)
     this.createTextDocument(1, this.lines)
   }
 
-  private attach(): void {
-    if (this.env.isVim) return
+  public get notAttachReason(): string {
+    return this._notAttachReason
+  }
+
+  public attach(): void {
+    if (isVim) return
     let lines = this.lines
     this.buffer.attach(true).then(res => {
-      if (!res) this.detach()
+      if (!res) fireDetach(this.bufnr)
     }, _e => {
-      this.detach()
+      fireDetach(this.bufnr)
     })
     this.buffer.listen('lines', (buf: Buffer, tick: number, firstline: number, lastline: number, linedata: string[]) => {
-      if (buf.id !== this.bufnr || !this._attached || tick == null) return
-      if (tick > this._changedtick) {
+      if (tick && tick > this._changedtick) {
         this._changedtick = tick
         lines = [...lines.slice(0, firstline), ...linedata, ...(lastline == -1 ? [] : lines.slice(lastline))]
+        if (lines.length == 0) lines = ['']
         this.lines = lines
+        fireLinesChanged(buf.id)
+        if (events.pumvisible) return
         this.fireContentChanges()
       }
     }, this.disposables)
-    this.buffer.listen('detach', async () => {
-      this.detach()
+    this.buffer.listen('detach', () => {
+      fireDetach(this.bufnr)
     }, this.disposables)
   }
 
@@ -241,98 +246,115 @@ export default class Document {
    * Check if document changed after last synchronize
    */
   public get dirty(): boolean {
-    if (this.lines === this.syncLines) return false
+    // if (this.lines === this.syncLines) return false
+    // return !equals(this.lines, this.syncLines)
+    return this.lines !== this.syncLines
+  }
+
+  public get hasChanged(): boolean {
+    if (!this.dirty) return false
     return !equals(this.lines, this.syncLines)
   }
 
-  private _fireContentChanges(): void {
-    let { cursor } = events
-    if (!this.dirty) return
+  private _fireContentChanges(edit?: TextEdit): void {
+    if (this.lines === this.syncLines) return
     let textDocument = this._textDocument
-    let endOffset = null
-    // consider cursor position.
-    if (cursor && cursor.bufnr == this.bufnr) {
-      endOffset = this.getEndOffset(cursor.lnum, cursor.col, cursor.insert)
+    let changes: TextDocumentContentChange[] = []
+    if (!edit) {
+      let { cursor } = events
+      let pos: Position
+      // consider cursor position.
+      if (cursor.bufnr == this.bufnr) {
+        let content = this.lines[cursor.lnum - 1] ?? ''
+        pos = Position.create(cursor.lnum - 1, characterIndex(content, cursor.col - 1))
+      }
+      edit = getTextEdit(textDocument.lines, this.lines, pos, cursor.insert)
     }
-    let content = this.getDocumentContent()
-    let change = getChange(textDocument.getText(), content, endOffset)
-    if (change == null) return
-    let start = textDocument.positionAt(change.start)
-    let end = textDocument.positionAt(change.end)
-    let original = textDocument.getText(Range.create(start, end))
-    this.createTextDocument(this.version + 1, this.lines)
-    let changes = [{
-      range: { start, end },
-      rangeLength: change.end - change.start,
-      text: change.newText
-    }]
-    this._onDocumentChange.fire({
+    let original: string
+    if (edit) {
+      original = textDocument.getText(edit.range)
+      // TODO the range could be wrong
+      changes.push({ range: edit.range, text: edit.newText, rangeLength: original.length })
+    } else {
+      original = ''
+    }
+    let created = this.createTextDocument(this.version + (edit ? 1 : 0), this.lines)
+    this._onDocumentChange.fire(Object.freeze({
       bufnr: this.bufnr,
       original,
       originalLines: textDocument.lines,
-      textDocument: { version: this.version, uri: this.uri },
+      textDocument: { version: created.version, uri: this.uri },
       contentChanges: changes
-    })
-    this._words = this.chars.matchKeywords(content)
+    }))
   }
 
-  public async applyEdits(edits: TextEdit[]): Promise<void> {
-    if (!Array.isArray(arguments[0]) && Array.isArray(arguments[1])) {
-      edits = arguments[1]
-    }
-    if (edits.length == 0 || !this._attached) return
-    let textDocument = TextDocument.create(this.uri, this.languageId, 1, this.getDocumentContent())
-    edits = edits.filter(o => textDocument.getText(o.range) !== o.newText)
+  public async applyEdits(edits: TextEdit[], joinUndo = false, move: boolean | Position = false): Promise<TextEdit | undefined> {
+    if (Array.isArray(arguments[1])) edits = arguments[1]
+    if (!this._attached || edits.length === 0) return
+    this._forceSync()
+    let textDocument = this.textDocument
+    edits = filterSortEdits(textDocument, edits)
     // apply edits to current textDocument
-    let applied = TextDocument.applyEdits(textDocument, edits)
-    let content: string
-    if (this.eol) {
-      if (applied.endsWith('\r\n')) {
-        content = applied.slice(0, -2)
-      } else {
-        content = applied.endsWith('\n') ? applied.slice(0, -1) : applied
+    let newLines = applyEdits(textDocument, edits)
+    if (!newLines) return
+    let lines = textDocument.lines
+    let changed = diffLines(lines, newLines, getStartLine(edits[0]))
+    // append new lines
+    let isAppend = changed.start === changed.end && changed.start === lines.length
+    let original = lines.slice(changed.start, changed.end)
+    let changes: TextChangeItem[] = []
+    // avoid out of range and lines replacement, avoid too many buf_set_text cause nvim slow.
+    if (edits.length < 200
+      && changed.start !== changed.end
+      && edits[edits.length - 1].range.end.line < lines.length
+    ) {
+      changes = toTextChanges(lines, edits)
+    }
+    let cursor: [number, number]
+    let isCurrent = events.bufnr == this.bufnr
+    let col: number
+    if (move && isCurrent && !isAppend) {
+      let pos = Position.is(move) ? move : undefined
+      if (!pos && this.bufnr === events.cursor.bufnr) {
+        let { col, lnum } = events.cursor
+        pos = Position.create(lnum - 1, characterIndex(this.lines[lnum - 1], col - 1))
       }
+      if (pos) {
+        let position = getPositionFromEdits(pos, edits)
+        if (comparePosition(pos, position) !== 0) {
+          let content = toText(newLines[position.line])
+          let col = byteIndex(content, position.character) + 1
+          cursor = [position.line + 1, col]
+        }
+        col = byteIndex(this.lines[pos.line], pos.character) + 1
+      }
+    }
+    this.nvim.pauseNotification()
+    if (isCurrent && joinUndo) this.nvim.command('undojoin', true)
+    if (isAppend) {
+      this.buffer.setLines(changed.replacement, { start: -1, end: -1 }, true)
     } else {
-      content = applied
+      this.nvim.call('coc#ui#set_lines', [
+        this.bufnr,
+        this._changedtick,
+        original,
+        changed.replacement,
+        changed.start,
+        changed.end,
+        changes,
+        cursor,
+        col
+      ], true)
     }
-    let lines = this.lines
-    let newLines = content.split(/\r?\n/)
-    // could be equal sometimes
-    if (!equals(lines, newLines)) {
-      let lnums = edits.map(o => o.range.start.line)
-      let d = diffLines(lines, newLines, Math.min.apply(null, lnums))
-      let original = lines.slice(d.start, d.end)
-      let changes: TextChangeItem[] = []
-      let total = lines.length
-      // avoid out of range and lines replacement.
-      if (this.nvim.hasFunction('nvim_buf_set_text')
-        && edits.every(o => validRange(o.range, total))) {
-        // keep the extmarks
-        let sortedEdits = mergeSort(edits.map(getWellformedEdit), (a, b) => {
-          let diff = a.range.start.line - b.range.start.line
-          if (diff === 0) {
-            return a.range.start.character - b.range.start.character
-          }
-          return diff
-        })
-        // console.log(JSON.stringify(sortedEdits, null, 2))
-        changes = sortedEdits.reverse().map(o => {
-          let r = o.range
-          let sl = this.getline(r.start.line)
-          let sc = byteLength(sl.slice(0, r.start.character))
-          let el = r.end.line == r.start.line ? sl : this.getline(r.end.line)
-          let ec = byteLength(el.slice(0, r.end.character))
-          return [o.newText.split(/\r?\n/), r.start.line, sc, r.end.line, ec]
-        })
-      }
-      this.nvim.call('coc#util#set_lines', [this.bufnr, this._changedtick, original, d.replacement, d.start, d.end, changes], true)
-      if (this.env.isVim) this.nvim.command('redraw', true)
-      await waitNextTick(() => {
-        // can't wait vim sync buffer
-        this.lines = newLines
-        this._forceSync()
-      })
-    }
+    this.nvim.resumeNotification(isCurrent, true)
+    let textEdit = edits.length == 1 ? edits[0] : mergeTextEdits(edits, lines, newLines)
+    await waitNextTick()
+    this.lines = newLines
+    fireLinesChanged(this.bufnr)
+    this.fireContentChanges.clear()
+    this._fireContentChanges(textEdit)
+    let range = Range.create(changed.start, 0, changed.start + changed.replacement.length, 0)
+    return TextEdit.replace(range, original.join('\n') + (original.length > 0 ? '\n' : ''))
   }
 
   public async changeLines(lines: [number, string][]): Promise<void> {
@@ -345,9 +367,10 @@ export default class Document {
       }
     }
     if (!filtered.length) return
-    this.nvim.call('coc#util#change_lines', [this.bufnr, filtered], true)
+    this.nvim.call('coc#ui#change_lines', [this.bufnr, filtered], true)
     this.nvim.redrawVim()
     this.lines = newLines
+    fireLinesChanged(this.bufnr)
     this._forceSync()
   }
 
@@ -358,7 +381,7 @@ export default class Document {
 
   public forceSync(): void {
     // may cause bugs, prevent extensions use it.
-    if (global.hasOwnProperty('__TEST__')) {
+    if (global.__TEST__) {
       this._forceSync()
     }
   }
@@ -380,52 +403,33 @@ export default class Document {
     return this.chars.isKeyword(word)
   }
 
-  /**
-   * Generate more words by split word with `-`
-   */
-  public getMoreWords(): string[] {
-    let res = []
-    let { words, chars } = this
-    if (!chars.isKeywordChar('-')) return res
-    for (let word of words) {
-      word = word.replace(/^-+/, '')
-      if (word.includes('-')) {
-        let parts = word.split('-')
-        for (let part of parts) {
-          if (
-            part.length > 2 &&
-            !res.includes(part) &&
-            !words.includes(part)
-          ) {
-            res.push(part)
-          }
-        }
-      }
+  public getStartWord(text: string): string {
+    let i = 0
+    for (; i < text.length; i++) {
+      if (!this.chars.isKeywordChar(text[i])) break
     }
-    return res
+    return text.slice(0, i)
   }
 
   /**
    * Current word for replacement
    */
   public getWordRangeAtPosition(position: Position, extraChars?: string, current = true): Range | null {
-    let chars = this.chars.clone()
+    let chars = this.chars
     if (extraChars && extraChars.length) {
+      chars = this.chars.clone()
       for (let ch of extraChars) {
         chars.addKeyword(ch)
       }
     }
     let line = this.getline(position.line, current)
-    if (line.length == 0 || position.character >= line.length) return null
-    if (!chars.isKeywordChar(line[position.character])) return null
+    let ch = line[position.character]
+    if (ch == null || !chars.isKeywordChar(ch)) return null
     let start = position.character
     let end = position.character + 1
-    if (!chars.isKeywordChar(line[start])) {
-      return Range.create(position, { line: position.line, character: position.character + 1 })
-    }
     while (start >= 0) {
       let ch = line[start - 1]
-      if (!ch || !chars.isKeyword(ch)) break
+      if (!ch || !chars.isKeywordChar(ch)) break
       start = start - 1
     }
     while (end <= line.length) {
@@ -436,87 +440,18 @@ export default class Document {
     return Range.create(position.line, start, position.line, end)
   }
 
-  private createTextDocument(version: number, lines: ReadonlyArray<string>): void {
+  private createTextDocument(version: number, lines: ReadonlyArray<string>): LinesTextDocument {
     let { uri, languageId, eol } = this
-    this._textDocument = new LinesTextDocument(uri, languageId, version, lines, this.bufnr, eol)
-  }
-
-  /**
-   * Used by vim for fetch new lines.
-   */
-  private async _fetchContent(sync?: boolean): Promise<void> {
-    if (!this.env.isVim || !this._attached) return
-    let { nvim, bufnr, changedtick } = this
-    let o = await nvim.call('coc#util#get_buf_lines', [bufnr, changedtick])
-    if (o) {
-      this._changedtick = o.changedtick
-      this.lines = o.lines
-      if (sync) {
-        this._forceSync()
-      } else {
-        this.fireContentChanges()
-      }
-    } else if (sync) {
-      this._forceSync()
-    }
-  }
-
-  /**
-   * Only used on vim8 for set new line with TextChangedP
-   */
-  public changeLine(lnum: number, line: string, changedtick: number): void {
-    let curr = this.lines[lnum - 1]
-    if (curr === undefined) return
-    if (curr !== line) {
-      let newLines = this.lines.slice()
-      newLines[lnum - 1] = line
-      this.lines = newLines
-    }
-    this._changedtick = changedtick
-  }
-
-  /**
-   * Get and synchronize change
-   */
-  public async patchChange(currentLine?: boolean): Promise<void> {
-    if (!this._attached) return
-    if (this.env.isVim) {
-      if (currentLine) {
-        let change = await this.nvim.call('coc#util#get_changeinfo', []) as ChangeInfo
-        if (change.bufnr !== this.bufnr) return
-        if (change.changedtick < this._changedtick) {
-          this._forceSync()
-          return
-        }
-        let { lnum, line, changedtick } = change
-        let curr = this.getline(lnum - 1)
-        this._changedtick = changedtick
-        if (curr == line) {
-          this._forceSync()
-        } else {
-          let newLines = this.lines.slice()
-          newLines[lnum - 1] = line
-          this.lines = newLines
-          this._forceSync()
-        }
-      } else {
-        this.fetchContent.clear()
-        await this._fetchContent(true)
-      }
-    } else {
-      // changedtick from buffer events could be not latest. #3003
-      this._changedtick = await this.buffer.getVar('changedtick') as number
-      // we have latest lines aftet TextChange on neovim
-      this._forceSync()
-    }
+    let textDocument = this._textDocument = new LinesTextDocument(uri, languageId, version, lines, this.bufnr, eol)
+    return textDocument
   }
 
   /**
    * Get ranges of word in textDocument.
    */
   public getSymbolRanges(word: string): Range[] {
-    let { version, filetype, uri } = this
-    let textDocument = new LinesTextDocument(uri, filetype, version, this.lines, this.bufnr, this.eol)
+    let { version, languageId, uri } = this
+    let textDocument = new LinesTextDocument(uri, languageId, version, this.lines, this.bufnr, this.eol)
     let res: Range[] = []
     let content = textDocument.getText()
     let str = ''
@@ -544,14 +479,13 @@ export default class Document {
    */
   public fixStartcol(position: Position, valids: string[]): number {
     let line = this.getline(position.line)
-    if (!line) return null
+    if (!line) return 0
     let { character } = position
     let start = line.slice(0, character)
     let col = byteLength(start)
     let { chars } = this
     for (let i = start.length - 1; i >= 0; i--) {
       let c = start[i]
-      if (c == ' ') break
       if (!chars.isKeywordChar(c) && !valids.includes(c)) {
         break
       }
@@ -570,14 +504,14 @@ export default class Document {
     for (let line = start.line; line <= end.line; line++) {
       const text = this.getline(line, false)
       let colStart = line == start.line ? byteIndex(text, start.character) : 0
-      let colEnd = line == end.line ? byteIndex(text, end.character) : global.Buffer.byteLength(text)
+      let colEnd = line == end.line ? byteIndex(text, end.character) : NodeBuffer.byteLength(text)
       if (colStart >= colEnd) continue
       items.push(Object.assign({ hlGroup, lnum: line, colStart, colEnd }, opts))
     }
   }
 
   /**
-   * Real current line
+   * Line content 0 based line
    */
   public getline(line: number, current = true): string {
     if (current) return this.lines[line] || ''
@@ -602,8 +536,8 @@ export default class Document {
   /**
    * Get variable value by key, defined by `b:coc_{key}`
    */
-  public getVar<T>(key: string, defaultValue?: T): T {
-    let val = this.variables[`coc_${key}`]
+  public getVar<T extends VimValue>(key: string, defaultValue?: T): T {
+    let val = this.variables[`coc_${key}`] as T
     return val === undefined ? defaultValue : val
   }
 
@@ -618,33 +552,6 @@ export default class Document {
   }
 
   /**
-   * Get end offset from cursor position.
-   * For normal mode, use offset - 1 when possible
-   */
-  public getEndOffset(lnum: number, col: number, insert: boolean): number {
-    let total = 0
-    let len = this.lines.length
-    for (let i = lnum - 1; i < len; i++) {
-      let line = this.lines[i]
-      let l = line.length
-      if (i == lnum - 1 && l != 0) {
-        // current
-        let buf = global.Buffer.from(line, 'utf8')
-        let isEnd = buf.byteLength <= col - 1
-        if (!isEnd) {
-          total = total + buf.slice(col - 1, buf.length).toString('utf8').length
-          if (!insert) total = total - 1
-        }
-      } else {
-        total = total + l
-      }
-      if (!this.eol && i == len - 1) break
-      total = total + 1
-    }
-    return total
-  }
-
-  /**
    * Recreate document with new filetype.
    */
   public setFiletype(filetype: string): void {
@@ -656,30 +563,26 @@ export default class Document {
   /**
    * Change iskeyword option of document
    */
-  public setIskeyword(iskeyword: string): void {
+  public setIskeyword(iskeyword: string, lisp?: number): void {
     let chars = this.chars = new Chars(iskeyword)
     let additional = this.getVar<string[]>('additional_keywords', [])
+    if (lisp) chars.addKeyword('-')
     if (additional && Array.isArray(additional)) {
       for (let ch of additional) {
         chars.addKeyword(ch)
       }
     }
-    let lines = this.lines.length > 30000 ? this.lines.slice(0, 30000) : this.lines
-    // TODO not parse words
-    this._words = this.chars.matchKeywords(lines.join('\n'))
   }
 
   /**
    * Detach document.
    */
   public detach(): void {
-    if (this._disposed) return
     disposeAll(this.disposables)
-    this.textDocument.reset()
+    if (this._disposed) return
     this._disposed = true
     this._attached = false
     this.lines = []
-    this._words = []
     this.fetchContent.clear()
     this.fireContentChanges.clear()
     this._onDocumentChange.dispose()
@@ -689,6 +592,7 @@ export default class Document {
    * Synchronize latest document content
    */
   public async synchronize(): Promise<void> {
+    if (!this.attached) return
     let { changedtick } = this
     await this.patchChange()
     if (changedtick != this.changedtick) {
@@ -697,58 +601,105 @@ export default class Document {
   }
 
   /**
-   * Get localify bonus map.
-   *
-   * @internal
+   * Synchronize buffer change
    */
-  public getLocalifyBonus(sp: Position, ep: Position): Map<string, number> {
-    let res: Map<string, number> = new Map()
-    let { chars } = this
-    let startLine = Math.max(0, sp.line - 100)
-    let endLine = Math.min(this.lineCount, sp.line + 100)
-    let content = this.lines.slice(startLine, endLine).join('\n')
-    sp = Position.create(sp.line - startLine, sp.character)
-    ep = Position.create(ep.line - startLine, ep.character)
-    let doc = TextDocument.create(this.uri, this.languageId, 1, content)
-    let headCount = doc.offsetAt(sp)
-    let len = content.length
-    let tailCount = len - doc.offsetAt(ep)
-    let start = 0
-    let preKeyword = false
-    for (let i = 0; i < headCount; i++) {
-      let iskeyword = chars.isKeyword(content[i])
-      if (!preKeyword && iskeyword) {
-        start = i
-      } else if (preKeyword && (!iskeyword || i == headCount - 1)) {
-        if (i - start > 1) {
-          let str = content.slice(start, i)
-          res.set(str, i / headCount)
+  public async patchChange(currentLine?: boolean): Promise<void> {
+    if (!this._attached) return
+    if (isVim) {
+      if (currentLine) {
+        let change = await this.nvim.call('coc#util#get_changeinfo', [this.bufnr]) as ChangeInfo
+        if (!change || change.changedtick < this._changedtick) {
+          this._forceSync()
+          return
         }
-      }
-      preKeyword = iskeyword
-    }
-    start = len - tailCount
-    preKeyword = false
-    for (let i = start; i < content.length; i++) {
-      let iskeyword = chars.isKeyword(content[i])
-      if (!preKeyword && iskeyword) {
-        start = i
-      } else if (preKeyword && (!iskeyword || i == len - 1)) {
-        if (i - start > 1) {
-          let end = i == len - 1 ? i + 1 : i
-          let str = content.slice(start, end)
-          let score = res.get(str) || 0
-          res.set(str, Math.max(score, (len - i + (end - start)) / tailCount))
+        let { lnum, line, changedtick } = change
+        let curr = this.getline(lnum - 1)
+        this._changedtick = changedtick
+        if (curr == line) {
+          this._forceSync()
+        } else {
+          let newLines = this.lines.slice()
+          newLines[lnum - 1] = line
+          this.lines = newLines
+          fireLinesChanged(this.bufnr)
+          this._forceSync()
         }
+      } else {
+        this.fetchContent.clear()
+        await this._fetchContent(true)
       }
-      preKeyword = iskeyword
+    } else {
+      // changedtick from buffer events could be not latest. #3003
+      this._changedtick = await this.buffer.getVar('changedtick') as number
+      this._forceSync()
     }
-    return res
+  }
+
+  /**
+   * Used by vim8 to fetch lines.
+   */
+  public onTextChange(event: string, change: InsertChange): void {
+    if (event === 'TextChanged'
+      || event === 'TextChangedI'
+      || !this._noFetch) {
+      fireLinesChanged(this.bufnr)
+      this._noFetch = false
+      void this._fetchContent()
+      return
+    }
+    let { line, changedtick, lnum } = change
+    if (changedtick === this.changedtick) return
+    let newLines = this.lines.slice()
+    newLines[lnum - 1] = line
+    this.lines = newLines
+    fireLinesChanged(this.bufnr)
+    this._changedtick = changedtick
+    if (event !== 'TextChangedP') this._forceSync()
+  }
+
+  /**
+   * Used by vim for fetch new lines.
+   */
+  public async _fetchContent(sync?: boolean): Promise<void> {
+    if (!isVim || !this._attached) return
+    let { nvim, bufnr, changedtick } = this
+    let o = await nvim.call('coc#util#get_buf_lines', [bufnr, changedtick]) as { changedtick: number, lines: string[] } | undefined
+    this._noFetch = true
+    if (o) {
+      this._changedtick = o.changedtick
+      this.lines = o.lines
+      fireLinesChanged(this.bufnr)
+    }
+    if (sync) {
+      this._forceSync()
+    } else {
+      this.fireContentChanges()
+    }
   }
 }
 
-function validRange(range: Range, total: number): boolean {
-  if (range.end.line >= total) return false
-  if (range.start.line < 0 || range.start.character < 0) return false
-  return true
+function fireDetach(bufnr: number): void {
+  void events.fire('BufDetach', [bufnr])
+}
+
+function fireLinesChanged(bufnr: number): void {
+  void events.fire('LinesChanged', [bufnr])
+}
+
+export function getUri(fullpath: string, id: number, buftype: string, isCygwin: boolean): string {
+  if (!fullpath) return `untitled:${id}`
+  if (path.isAbsolute(fullpath)) return URI.file(isCygwin ? fullpath : path.normalize(fullpath)).toString()
+  if (isUrl(fullpath)) return URI.parse(fullpath).toString()
+  if (buftype != '') return `${buftype}:${id}`
+  return `unknown:${id}`
+}
+
+export function getNotAttachReason(buftype: string, enabled: number | undefined, size: number): string {
+  if (!['', 'acwrite'].includes(buftype)) {
+    return `not a normal buffer, buftype "${buftype}"`
+  }
+  if (enabled === 0) {
+    return `b:coc_enabled = 0`
+  }
+  return `buffer size ${size} exceed coc.preferences.maxFileSize`
 }

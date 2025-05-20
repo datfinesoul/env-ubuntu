@@ -3,7 +3,7 @@
 source "$(dirname "${0}")/_core.bash"
 
 if [[ "${kernel_name}" == "Darwin" ]]; then
-  true
+	true
 else
   sudo apt-get --yes update
   sudo apt-get --yes install \
@@ -24,7 +24,7 @@ else
 
   git clone 'https://gitlab.gnome.org/GNOME/meld.git'
   cd meld
-  meson -Dprefix="${HOME}/.local/bin" _build
+  meson -Dprefix="${HOME}/.local" _build
   cd _build
   ninja
   ninja install

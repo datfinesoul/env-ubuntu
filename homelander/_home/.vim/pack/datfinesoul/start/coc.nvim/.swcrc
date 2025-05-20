@@ -1,5 +1,13 @@
 {
   "sourceMaps": false,
+  "module": {
+    "type": "es6"
+  },
+  "env": {
+    "targets": {
+      "node": "14"
+    }
+  },
   "jsc": {
     "parser": {
       "syntax": "typescript",
@@ -7,7 +15,6 @@
       "dynamicImport": false,
       "decorators": false
     },
-    "loose": true,
-    "target": "es2016"
+    "loose": true
   }
 }

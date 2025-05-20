@@ -1,26 +1,38 @@
-import { Neovim } from '@chemzqm/neovim'
-import { v1 as uuid } from 'uuid'
-import { Disposable } from 'vscode-languageserver-protocol'
+'use strict'
+import { Neovim } from '../neovim'
+import events from '../events'
+import { createLogger } from '../logger'
 import { KeymapOption } from '../types'
-import { getKeymapModifier, MapMode } from '../util'
-import Documents from './documents'
-const logger = require('../util/logger')('core-keymaps')
+import { Disposable } from '../util/protocol'
+import { toBase64 } from '../util/string'
+const logger = createLogger('core-keymaps')
+
+export type MapMode = 'n' | 'i' | 'v' | 'x' | 's' | 'o' | '!'
+export type LocalMode = 'n' | 'i' | 'v' | 's' | 'x'
+
+export function getKeymapModifier(mode: MapMode): string {
+  if (mode == 'n' || mode == 'o' || mode == 'x' || mode == 'v') return '<C-U>'
+  if (mode == 'i') return '<C-o>'
+  if (mode == 's') return '<Esc>'
+  return ''
+}
+
+export function getBufnr(buffer: number | boolean): number {
+  return typeof buffer === 'number' ? buffer : events.bufnr
+}
 
 export default class Keymaps {
   private readonly keymaps: Map<string, [Function, boolean]> = new Map()
   private nvim: Neovim
-  constructor(private documents: Documents) {
-  }
 
   public attach(nvim: Neovim): void {
     this.nvim = nvim
   }
 
-  public async doKeymap(key: string, defaultReturn = '', pressed?: string): Promise<string> {
-    let keymap = this.keymaps.get(key)
+  public async doKeymap(key: string, defaultReturn: string): Promise<string> {
+    let keymap = this.keymaps.get(key) ?? this.keymaps.get('coc-' + key)
     if (!keymap) {
       logger.error(`keymap for ${key} not found`)
-      if (pressed) this.nvim.command(`silent! unmap <buffer> ${pressed.startsWith('{') && pressed.endsWith('}') ? `<${pressed.slice(1, -1)}>` : pressed}`, true)
       return defaultReturn
     }
     let [fn, repeat] = keymap
@@ -30,68 +42,82 @@ export default class Keymaps {
   }
 
   /**
-   * Regist <Plug>(coc-${key}) key mapping.
+   * Register global <Plug>(coc-${key}) key mapping.
    */
-  public registerKeymap(modes: MapMode[], key: string, fn: Function, opts: Partial<KeymapOption> = {}): Disposable {
-    if (!key) throw new Error(`Invalid key ${key} of registerKeymap`)
-    if (this.keymaps.has(key)) throw new Error(`${key} already exists.`)
+  public registerKeymap(modes: MapMode[], name: string, fn: Function, opts: Partial<KeymapOption> = {}): Disposable {
+    if (!name) throw new Error(`Invalid key ${name} of registerKeymap`)
+    let key = `coc-${name}`
+    if (this.keymaps.has(key)) throw new Error(`${name} already exists.`)
+    let lhs = `<Plug>(${key})`
     opts = Object.assign({ sync: true, cancel: true, silent: true, repeat: false }, opts)
     let { nvim } = this
     this.keymaps.set(key, [fn, !!opts.repeat])
     let method = opts.sync ? 'request' : 'notify'
-    let silent = opts.silent ? '<silent>' : ''
-    for (let m of modes) {
-      if (m == 'i') {
-        nvim.command(`inoremap ${silent}<expr> <Plug>(coc-${key}) coc#_insert_key('${method}', '${key}', ${opts.cancel ? 1 : 0})`, true)
+    let cancel = opts.cancel ? 1 : 0
+    for (let mode of modes) {
+      if (mode == 'i') {
+        nvim.setKeymap(mode, lhs, `coc#_insert_key('${method}', '${key}', ${cancel})`, {
+          expr: true,
+          noremap: true,
+          silent: opts.silent
+        })
       } else {
-        let modify = getKeymapModifier(m)
-        nvim.command(`${m}noremap ${silent} <Plug>(coc-${key}) :${modify}call coc#rpc#${method}('doKeymap', ['${key}'])<cr>`, true)
+        nvim.setKeymap(mode, lhs, `:${getKeymapModifier(mode)}call coc#rpc#${method}('doKeymap', ['${key}'])<cr>`, {
+          noremap: true,
+          silent: opts.silent
+        })
       }
     }
     return Disposable.create(() => {
       this.keymaps.delete(key)
       for (let m of modes) {
-        nvim.command(`${m}unmap <Plug>(coc-${key})`, true)
+        nvim.deleteKeymap(m, lhs)
       }
     })
   }
 
-  public registerExprKeymap(mode: 'i' | 'n' | 'v' | 's' | 'x', key: string, fn: Function, buffer = false): Disposable {
-    let id = `${mode}${global.Buffer.from(key).toString('base64')}${buffer ? '1' : '0'}`
+  public registerExprKeymap(mode: MapMode, lhs: string, fn: Function, buffer: number | boolean = false, cancel = true): Disposable {
+    let bufnr = getBufnr(buffer)
+    let id = `${mode}-${toBase64(lhs)}${buffer ? `-${bufnr}` : ''}`
     let { nvim } = this
-    this.keymaps.set(id, [fn, false])
+    let rhs: string
     if (mode == 'i') {
-      nvim.command(`inoremap <silent><expr>${buffer ? '<nowait><buffer>' : ''} ${key} coc#_insert_key('request', '${id}')`, true)
+      rhs = `coc#_insert_key('request', '${id}', ${cancel ? '1' : '0'})`
     } else {
-      nvim.command(`${mode}noremap <silent><expr>${buffer ? '<nowait><buffer>' : ''} ${key} coc#rpc#request('doKeymap', ['${id}'])`, true)
+      rhs = `coc#rpc#request('doKeymap', ['${id}'])`
     }
+    let opts = { noremap: true, silent: true, expr: true, nowait: true }
+    if (buffer) {
+      nvim.createBuffer(bufnr).setKeymap(mode, lhs, rhs, opts)
+    } else {
+      nvim.setKeymap(mode, lhs, rhs, opts)
+    }
+    this.keymaps.set(id, [fn, false])
     return Disposable.create(() => {
       this.keymaps.delete(id)
-      nvim.command(`${mode}unmap ${buffer ? '<buffer>' : ''} ${key}`, true)
+      if (buffer) {
+        nvim.createBuffer(bufnr).deleteKeymap(mode, lhs)
+      } else {
+        nvim.deleteKeymap(mode, lhs)
+      }
     })
   }
 
-  public registerLocalKeymap(mode: 'n' | 'v' | 's' | 'x', key: string, fn: Function, notify = false): Disposable {
-    let id = uuid()
+  public registerLocalKeymap(bufnr: number, mode: LocalMode, lhs: string, fn: Function, notify: boolean): Disposable {
     let { nvim } = this
-    let bufnr = this.documents.bufnr
+    let buffer = nvim.createBuffer(bufnr)
+    let id = `local-${bufnr}-${mode}-${toBase64(lhs)}`
     this.keymaps.set(id, [fn, false])
     let method = notify ? 'notify' : 'request'
     let modify = getKeymapModifier(mode)
-    // neoivm's bug '<' can't be used.
-    let escaped = key.startsWith('<') && key.endsWith('>') ? `{${key.slice(1, -1)}}` : key
-    if (this.nvim.hasFunction('nvim_buf_set_keymap') && !global.hasOwnProperty('__TEST__')) {
-      nvim.call('nvim_buf_set_keymap', [0, mode, key, `:${modify}call coc#rpc#${method}('doKeymap', ['${id}', '', '${escaped}'])<CR>`, {
-        silent: true,
-        nowait: true
-      }], true)
-    } else {
-      let cmd = `${mode}noremap <silent><nowait><buffer> ${key} :${modify}call coc#rpc#${method}('doKeymap', ['${id}', '', '${escaped}'])<CR>`
-      nvim.command(cmd, true)
-    }
+    buffer.setKeymap(mode, lhs, `:${modify}call coc#rpc#${method}('doKeymap', ['${id}'])<CR>`, {
+      silent: true,
+      nowait: true,
+      noremap: true
+    })
     return Disposable.create(() => {
       this.keymaps.delete(id)
-      nvim.call('coc#compat#buf_del_keymap', [bufnr, mode, key], true)
+      buffer.deleteKeymap(mode, lhs)
     })
   }
 }

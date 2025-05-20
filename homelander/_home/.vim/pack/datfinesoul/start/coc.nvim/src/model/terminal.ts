@@ -1,5 +1,5 @@
-import { Neovim } from '@chemzqm/neovim'
-const logger = require('../util/logger')('model-terminal')
+'use strict'
+import { Neovim } from '../neovim'
 
 export interface TerminalOptions {
   /**
@@ -41,7 +41,7 @@ export interface TerminalExitStatus {
   code: number | undefined
 }
 
-export default class TerminalModel {
+export class TerminalModel {
   public bufnr: number
   private pid = 0
   public exitStatus: TerminalExitStatus | undefined
@@ -57,7 +57,7 @@ export default class TerminalModel {
   public async start(cwd?: string, env?: { [key: string]: string | null }): Promise<void> {
     let { nvim } = this
     let cmd = [this.cmd, ...this.args]
-    let [bufnr, pid] = await nvim.call('coc#terminal#start', [cmd, cwd, env || {}, !!this.strictEnv])
+    let [bufnr, pid] = await nvim.call('coc#terminal#start', [cmd, cwd, env || {}, !!this.strictEnv]) as [number, number]
     this.bufnr = bufnr
     this.pid = pid
   }
@@ -81,12 +81,13 @@ export default class TerminalModel {
 
   public async show(preserveFocus?: boolean): Promise<boolean> {
     let { bufnr, nvim } = this
-    if (!bufnr) return
-    let [loaded, winid, curr] = await nvim.eval(`[bufloaded(${bufnr}),bufwinid(${bufnr}),win_getid()]`) as [number, number, number]
+    if (!bufnr) return false
+    let [loaded, curr, winids] = await nvim.eval(`[bufloaded(${bufnr}),win_getid(),win_findbuf(${bufnr})]`) as [number, number, number[]]
     if (!loaded) return false
-    if (curr == winid) return true
+    let winid = winids[0]
+    if (winid && curr == winid) return true
     nvim.pauseNotification()
-    if (winid == -1) {
+    if (!winid) {
       nvim.command(`below ${bufnr}sb`, true)
       nvim.command('resize 8', true)
       nvim.call('coc#util#do_autocmd', ['CocTerminalOpen'], true)
@@ -104,9 +105,7 @@ export default class TerminalModel {
   public async hide(): Promise<void> {
     let { bufnr, nvim } = this
     if (!bufnr) return
-    let winnr = await nvim.call('bufwinnr', bufnr)
-    if (winnr == -1) return
-    await nvim.command(`${winnr}close!`)
+    await nvim.eval(`coc#window#close(bufwinid(${bufnr}))`)
   }
 
   public dispose(): void {

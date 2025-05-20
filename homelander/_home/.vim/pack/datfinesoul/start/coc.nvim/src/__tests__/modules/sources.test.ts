@@ -1,9 +1,9 @@
-import { Disposable } from 'vscode-languageserver-protocol'
-import { Neovim } from '@chemzqm/neovim'
+import { Neovim } from '../../neovim'
 import path from 'path'
+import { Disposable } from 'vscode-languageserver-protocol'
+import sources from '../../completion/sources'
+import { ISource, SourceType } from '../../completion/types'
 import events from '../../events'
-import sources from '../../sources'
-import { ISource, SourceType } from '../../types'
 import { disposeAll } from '../../util'
 import helper from '../helper'
 
@@ -20,10 +20,55 @@ afterAll(async () => {
 
 afterEach(async () => {
   disposeAll(disposables)
-  await helper.reset()
 })
 
 describe('sources', () => {
+  it('should check commit', () => {
+    expect(sources.shouldCommit(undefined, undefined, '')).toBe(false)
+    let source = sources.getSource('$words')
+    expect(sources.shouldCommit(source, { word: '' }, '.')).toBe(false)
+  })
+
+  it('should get normal sources', () => {
+    sources.createSource({
+      name: 'name',
+      documentSelector: [{ language: 'vim' }],
+      doComplete: () => null
+    })
+    let arr = sources.getNormalSources('', 'test:///1')
+    let res = arr.find(o => o.name === 'name')
+    expect(res).toBeUndefined()
+    sources.createSource({
+      name: 'name',
+      documentSelector: [{ language: '*' }],
+      doComplete: () => null
+    })
+    arr = sources.getNormalSources('x', 'test:///1')
+    res = arr.find(o => o.name === 'name')
+    expect(res).toBeDefined()
+  })
+
+  it('should get trigger sources', () => {
+    let res = sources.getTriggerSources('', 'vim', 'test:///1')
+    expect(res).toEqual([])
+    let arr = ['around', 'buffer', 'file']
+    res = sources.getTriggerSources('', 'vim', 'test:///1', arr)
+    let find = res.find(o => arr.includes(o.name))
+    expect(find).toBeUndefined()
+    sources.createSource({
+      name: 'name',
+      documentSelector: [{ language: 'vim' }],
+      doComplete: () => null
+    })
+    helper.updateConfiguration('coc.source.name.triggerCharacters', ['.'])
+    res = sources.getTriggerSources('.', 'vim', 'test:///1', arr)
+    find = res.find(o => o.name === 'name')
+    expect(find).toBeDefined()
+    res = sources.getTriggerSources('.', 'txt', 'test:///1', arr)
+    find = res.find(o => o.name === 'name')
+    expect(find).toBeUndefined()
+  })
+
   it('should do document enter', async () => {
     let fn = jest.fn()
     let source: ISource = {
@@ -60,13 +105,13 @@ describe('sources', () => {
     expect(names.includes('bar')).toBe(true)
   })
 
-  it('should return source states', () => {
-    let stats = sources.sourceStats()
+  it('should return source states', async () => {
+    let stats = await helper.doAction('sourceStat')
     expect(stats.length > 1).toBe(true)
   })
 
-  it('should toggle source state', () => {
-    sources.toggleSource('around')
+  it('should toggle source state', async () => {
+    await helper.doAction('toggleSource', 'around')
     let s = sources.getSource('around')
     expect(s.enable).toBe(false)
     sources.toggleSource('around')
@@ -97,7 +142,7 @@ describe('sources#refresh', () => {
       refresh: fn
     }
     disposables.push(sources.addSource(source))
-    await sources.refresh('refresh')
+    await helper.doAction('refreshSource', 'refresh')
     expect(fn).toBeCalled()
   })
 
@@ -116,21 +161,16 @@ describe('sources#refresh', () => {
 })
 
 describe('sources#createSource', () => {
-  it('should create source', async () => {
-    disposables.push(sources.createSource({
-      name: 'custom',
-      doComplete: () => Promise.resolve({
-        items: [{
-          word: 'custom'
-        }]
-      })
-    }))
-    await helper.createDocument()
-    await nvim.input('i')
-    await helper.wait(30)
-    await nvim.input('c')
-    let visible = await helper.visible('custom', 'custom')
-    expect(visible).toBe(true)
+  it('should throw on create source', async () => {
+    expect(() => {
+      sources.createSource({
+        doComplete: () => Promise.resolve({
+          items: [{
+            word: 'custom'
+          }]
+        })
+      } as any)
+    }).toThrow()
   })
 
   it('should create vim source', async () => {
@@ -138,17 +178,14 @@ describe('sources#createSource', () => {
     await nvim.command(`set runtimepath+=${folder}`)
     disposables.push({
       dispose: () => {
-        nvim.command(`set runtimepath-=${folder}`, true)
         sources.removeSource('email')
       }
     })
-    await helper.wait(100)
-    let exists = sources.has('email')
-    expect(exists).toBe(true)
+    await helper.waitValue(() => {
+      return sources.has('email')
+    }, true)
     await helper.createDocument()
-    await nvim.input('i')
-    await helper.wait(10)
-    await nvim.input('@')
+    await nvim.input('i@')
     await helper.visible('foo@gmail.com')
   })
 })
@@ -185,18 +222,14 @@ describe('sources#getTriggerSources()', () => {
   })
 
   it('should filter disabled sources', async () => {
-    await helper.edit()
     await nvim.setLine('foo bar ')
     let buf = await nvim.buffer
     await buf.setVar('coc_disabled_sources', ['around', 'buffer', 'file'])
-    await helper.wait(30)
     await nvim.input('Af')
+    await helper.wait(30)
+    await nvim.input('/')
     await helper.wait(100)
     let visible = await nvim.call('pumvisible')
-    if (visible) {
-      let items = await helper.getItems()
-      console.log(items)
-    }
     expect(visible).toBe(0)
   })
 })

@@ -1,14 +1,18 @@
-import { Buffer, Neovim } from '@chemzqm/neovim'
-import debounce from 'debounce'
-import { CancellationTokenSource, Color, ColorInformation, Position, Range } from 'vscode-languageserver-protocol'
-import languages from '../../languages'
+'use strict'
+import { Buffer, Neovim } from '../../neovim'
+import { Color, ColorInformation, Position, Range } from 'vscode-languageserver-types'
+import languages, { ProviderName } from '../../languages'
 import { SyncItem } from '../../model/bufferSync'
+import Document from '../../model/document'
 import { HighlightItem } from '../../types'
+import { getConditionValue } from '../../util'
 import { isDark, toHexString } from '../../util/color'
+import * as Is from '../../util/is'
+import { debounce } from '../../util/node'
 import { comparePosition, positionInRange } from '../../util/position'
+import { CancellationTokenSource } from '../../util/protocol'
 import window from '../../window'
 import workspace from '../../workspace'
-const logger = require('../../util/logger')('colors-buffer')
 const NAMESPACE = 'color'
 
 export interface ColorRanges {
@@ -17,33 +21,67 @@ export interface ColorRanges {
 }
 
 export interface ColorConfig {
-  filetypes: string[]
+  filetypes: string[] | null
   highlightPriority: number
 }
 
+const debounceTime = getConditionValue(200, 10)
+
 export default class ColorBuffer implements SyncItem {
   private _colors: ColorInformation[] = []
-  private tokenSource: CancellationTokenSource
+  private tokenSource: CancellationTokenSource | undefined
   public highlight: Function & { clear(): void }
+  private _enable: boolean | undefined
   // last highlight version
   constructor(
     private nvim: Neovim,
-    private bufnr: number,
+    public readonly doc: Document,
     private config: ColorConfig,
     private usedColors: Set<string>) {
     this.highlight = debounce(() => {
-      this.doHighlight().logError()
-    }, global.hasOwnProperty('__TEST__') ? 10 : 300)
-    this.highlight()
+      void this.doHighlight()
+    }, debounceTime)
+    if (this.hasProvider) this.highlight()
+  }
+
+  public get enable(): boolean {
+    if (Is.boolean(this._enable)) return this._enable
+    this._enable = workspace.getConfiguration('colors', this.doc).get('enable', false)
+    return this._enable
+  }
+
+  public updateDocumentConfig(): void {
+    let enable = this.enabled
+    this._enable = workspace.getConfiguration('colors', this.doc).get('enable', false)
+    if (enable != this.enabled) {
+      if (enable) {
+        this.clearHighlight()
+      } else {
+        void this.doHighlight()
+      }
+    }
+  }
+
+  public toggle(): void {
+    if (this._enable) {
+      this._enable = false
+      this.clearHighlight()
+    } else {
+      this._enable = true
+      void this.doHighlight()
+    }
+  }
+
+  private get hasProvider(): boolean {
+    return languages.hasProvider(ProviderName.DocumentColor, this.doc)
   }
 
   public get enabled(): boolean {
     let { filetypes } = this.config
-    let doc = workspace.getDocument(this.bufnr)
-    if (!doc) return false
-    if (filetypes.includes('*')) return true
-    if (!languages.hasProvider('documentColor', doc.textDocument)) return false
-    return filetypes.includes(doc.filetype)
+    let { filetype } = this.doc
+    if (!this.hasProvider) return false
+    if (Array.isArray(filetypes) && (filetypes.includes('*') || filetypes.includes(filetype))) return true
+    return this.enable
   }
 
   public onChange(): void {
@@ -51,13 +89,8 @@ export default class ColorBuffer implements SyncItem {
     this.highlight()
   }
 
-  public onTextChange(): void {
-    this.cancel()
-    this.highlight()
-  }
-
   public get buffer(): Buffer {
-    return this.nvim.createBuffer(this.bufnr)
+    return this.doc.buffer
   }
 
   public get colors(): ColorInformation[] {
@@ -70,8 +103,7 @@ export default class ColorBuffer implements SyncItem {
 
   public async doHighlight(): Promise<void> {
     if (!this.enabled) return
-    let { nvim } = this
-    let doc = workspace.getDocument(this.bufnr)
+    let { nvim, doc } = this
     this.tokenSource = new CancellationTokenSource()
     let { token } = this.tokenSource
     let colors: ColorInformation[]
@@ -85,12 +117,12 @@ export default class ColorBuffer implements SyncItem {
       let hlGroup = getHighlightGroup(o.color)
       doc.addHighlights(items, hlGroup, o.range, { combine: false })
     })
-    let diff = await window.diffHighlights(this.bufnr, NAMESPACE, items)
+    let diff = await window.diffHighlights(doc.bufnr, NAMESPACE, items)
     if (token.isCancellationRequested || !diff) return
     nvim.pauseNotification()
     this.defineColors(colors)
-    void nvim.resumeNotification(false, true)
-    await window.applyDiffHighlights(this.bufnr, NAMESPACE, this.config.highlightPriority, diff, true)
+    nvim.resumeNotification(false, true)
+    await window.applyDiffHighlights(doc.bufnr, NAMESPACE, this.config.highlightPriority, diff, true)
   }
 
   private defineColors(colors: ColorInformation[]): void {
@@ -116,7 +148,6 @@ export default class ColorBuffer implements SyncItem {
   public cancel(): void {
     if (this.tokenSource) {
       this.tokenSource.cancel()
-      this.tokenSource.dispose()
       this.tokenSource = null
     }
   }

@@ -27,6 +27,7 @@ if [[ "${kernel_name}" == 'Darwin' ]]; then
   "${script_dir}/homelander.bash" .bash_profile
 fi
 "${script_dir}/homelander.bash" .bashrc
+"${script_dir}/homelinker.bash"
 
 function cleanup {
   ls /tmp/*.log

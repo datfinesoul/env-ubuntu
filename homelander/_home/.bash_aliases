@@ -43,7 +43,7 @@ alias git_merged_age=$'git_merged | xargs -I {} bash -c \'echo $(git show -s --f
 alias git_remote=$'git branch -r --no-color | awk \'{if ($1 ~ /^origin\//){ if ($1 !~ /(master|HEAD)/) print $1 }}\''
 alias git_no_tracking=$'git branch -r | awk \'{print $1}\' | egrep -v -f /dev/fd/0 <(git branch -vv | grep origin) | awk \'{print $1}\''
 
-alias ag="ag --hidden --ignore 'node_modules' --ignore '.git' --skip-vcs-ignores"
+alias ag="ag --follow --hidden --ignore 'node_modules' --ignore '.git' --skip-vcs-ignores"
 alias deps='jq "{"prod":.dependencies, "dev":.devDependencies}" package.json'
 
 alias recolor="source $HOME/.config/base16-shell/base16-default.dark.sh"
@@ -51,12 +51,14 @@ alias recolor="source $HOME/.config/base16-shell/base16-default.dark.sh"
 alias k=kubectl
 
 alias tfver="${HOME}/env-ubuntu/installers/terraform-cli.manual.bash"
-which bat > /dev/null && alias bat='bat' || alias bat='batcat'
+which bat > /dev/null && alias bat='bat --theme 1337' || alias bat='batcat'
 
 # AT HOME ONLY
 alias fix_fn="echo 2 | sudo tee /sys/module/hid_apple/parameters/fnmode"
 alias code="vscodium"
-alias ssh="kitty +kitten ssh"
+alias ssh='env TERM=xterm-256color ssh'
+#NOTE: The below is suggested, but I cannot get it working almost anywhere
+#alias ssh="kitty +kitten ssh"
 alias purge="printf '\x1b[2J\x1b[3J\x1b[1;1H'"
 #history + percol - date
 alias hp="history | percol --match-method regex | awk '{\$1=\$2=\$3=\"\"; print \$0;}'"
@@ -90,4 +92,5 @@ alias iambic-beta="docker run -it --rm -u $(id -u):$(id -g) \
 alias assume='GRANTED_ALIAS_CONFIGURED="true" . assume'
 alias nocolor='TERM=dumb script --command /bin/bash -q /dev/null'
 alias shellcheck='shellcheck --check-sourced --external-sources'
-alias tf='terraform'
+#alias tf='terraform'
+alias pn=pnpm

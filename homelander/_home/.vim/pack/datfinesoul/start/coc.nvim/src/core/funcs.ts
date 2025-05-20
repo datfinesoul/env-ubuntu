@@ -1,21 +1,20 @@
-import { Neovim } from '@chemzqm/neovim'
-import minimatch from 'minimatch'
-import os from 'os'
-import path from 'path'
-import semver from 'semver'
-import { DocumentFilter, DocumentSelector } from 'vscode-languageserver-protocol'
+'use strict'
+import type { Neovim } from '../neovim'
+import type { DocumentFilter, DocumentSelector } from 'vscode-languageserver-protocol'
 import { URI } from 'vscode-uri'
-import which from 'which'
 import Configurations from '../configuration'
 import Resolver from '../model/resolver'
+import { isVim } from '../util/constants'
 import * as fs from '../util/fs'
+import { minimatch, os, path, semver, which } from '../util/node'
 import * as platform from '../util/platform'
+import { TextDocumentFilter } from '../util/protocol'
 let NAME_SPACE = 2000
 const resolver = new Resolver()
 
 const namespaceMap: Map<string, number> = new Map()
 
-interface PartialEnv {
+export interface PartialEnv {
   isVim: boolean
   version: string
 }
@@ -46,12 +45,15 @@ export function has(env: PartialEnv, feature: string): boolean {
   return semver.gte(env.version, feature.slice(5))
 }
 
-/*
- * Create namespace id.
- *
+export async function callAsync<T>(nvim: Neovim, method: string, args: any[]): Promise<T> {
+  if (!isVim) return await nvim.call(method, args) as T
+  return await nvim.callAsync('coc#util#with_callback', [method, args]) as T
+}
+
+/**
  * @deprecated
  */
-export function createNameSpace(name = ''): number {
+export function createNameSpace(name: string): number {
   if (namespaceMap.has(name)) return namespaceMap.get(name)
   NAME_SPACE = NAME_SPACE + 1
   namespaceMap.set(name, NAME_SPACE)
@@ -62,13 +64,8 @@ export function createNameSpace(name = ''): number {
  * Resolve watchman path.
  */
 export function getWatchmanPath(configurations: Configurations): string | null {
-  const preferences = configurations.getConfiguration('coc.preferences')
-  let watchmanPath = preferences.get<string>('watchmanPath', 'watchman')
-  try {
-    return which.sync(watchmanPath)
-  } catch (e) {
-    return null
-  }
+  const watchmanPath = configurations.initialConfiguration.get<string>('coc.preferences.watchmanPath', 'watchman')
+  return which.sync(watchmanPath, { nothrow: true })
 }
 
 export async function findUp(nvim: Neovim, cwd: string, filename: string | string[]): Promise<string | null> {
@@ -89,7 +86,7 @@ export function resolveModule(name: string): Promise<string> {
   return resolver.resolveModule(name)
 }
 
-export function score(selector: DocumentSelector | DocumentFilter | string, uri: string, languageId: string): number {
+export function score(selector: DocumentSelector | DocumentFilter | string, uri: string, languageId: string, caseInsensitive = platform.isWindows || platform.isMacintosh): number {
   if (Array.isArray(selector)) {
     // array -> take max individual value
     let ret = 0
@@ -114,7 +111,7 @@ export function score(selector: DocumentSelector | DocumentFilter | string, uri:
     } else {
       return 0
     }
-  } else if (selector) {
+  } else if (selector && TextDocumentFilter.is(selector)) {
     let u = URI.parse(uri)
     // filter -> select accordingly, use defaults for scheme
     const { language, pattern, scheme } = selector
@@ -140,11 +137,10 @@ export function score(selector: DocumentSelector | DocumentFilter | string, uri:
     }
 
     if (pattern) {
-      let caseInsensitive = platform.isWindows || platform.isMacintosh
       let p = caseInsensitive ? pattern.toLowerCase() : pattern
       let f = caseInsensitive ? u.fsPath.toLowerCase() : u.fsPath
       if (p === f || minimatch(f, p, { dot: true })) {
-        ret = 5
+        ret = Math.max(ret, 5)
       } else {
         return 0
       }

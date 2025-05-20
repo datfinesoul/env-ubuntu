@@ -1,9 +1,11 @@
-import { Neovim } from '@chemzqm/neovim'
-import { CancellationTokenSource, Disposable, Emitter, Event } from 'vscode-languageserver-protocol'
+'use strict'
+import { Neovim } from '../neovim'
 import { URI } from 'vscode-uri'
 import events from '../events'
 import { TextDocumentContentProvider } from '../provider'
 import { disposeAll } from '../util'
+import { CancellationTokenSource, Disposable, Emitter, Event } from '../util/protocol'
+import { toText } from '../util/string'
 import Documents from './documents'
 
 export default class ContentProvider implements Disposable {
@@ -26,13 +28,13 @@ export default class ContentProvider implements Disposable {
     return Array.from(this.providers.keys())
   }
 
-  private async onBufReadCmd(scheme: string, uri: string): Promise<void> {
+  public async onBufReadCmd(scheme: string, uri: string): Promise<void> {
     let provider = this.providers.get(scheme)
     if (!provider) return
     let tokenSource = new CancellationTokenSource()
     let content = await Promise.resolve(provider.provideTextDocumentContent(URI.parse(uri), tokenSource.token))
     let buf = await this.nvim.buffer
-    await buf.setLines(content.split(/\r?\n/), {
+    await buf.setLines(toText(content).split(/\r?\n/), {
       start: 0,
       end: -1,
       strictIndexing: false
@@ -42,25 +44,38 @@ export default class ContentProvider implements Disposable {
     })
   }
 
+  private resetAutocmds(): void {
+    let { nvim, schemes } = this
+    nvim.pauseNotification()
+    nvim.command(`autocmd! coc_dynamic_content`, true)
+    for (let scheme of schemes) {
+      nvim.command(getAutocmdCommand(scheme), true)
+    }
+    nvim.resumeNotification(false, true)
+  }
+
   public registerTextDocumentContentProvider(scheme: string, provider: TextDocumentContentProvider): Disposable {
     this.providers.set(scheme, provider)
     this._onDidProviderChange.fire()
     let disposables: Disposable[] = []
     if (provider.onDidChange) {
       provider.onDidChange(async uri => {
-        let { buffer } = this.documents.getDocument(uri.toString())
+        let doc = this.documents.getDocument(uri.toString())
+        if (!doc) return
         let tokenSource = new CancellationTokenSource()
         let content = await Promise.resolve(provider.provideTextDocumentContent(uri, tokenSource.token))
-        await buffer.setLines(content.split(/\r?\n/), {
+        await doc.buffer.setLines(content.split(/\r?\n/), {
           start: 0,
           end: -1,
           strictIndexing: false
         })
       }, null, disposables)
     }
+    this.nvim.command(getAutocmdCommand(scheme), true)
     return Disposable.create(() => {
       this.providers.delete(scheme)
       disposeAll(disposables)
+      this.resetAutocmds()
       this._onDidProviderChange.fire()
     })
   }
@@ -70,4 +85,9 @@ export default class ContentProvider implements Disposable {
     this._onDidProviderChange.dispose()
     this.providers.clear()
   }
+}
+
+function getAutocmdCommand(scheme: string): string {
+  let rhs = `call coc#rpc#request('CocAutocmd', ['BufReadCmd','${scheme}', expand('<afile>')]) | filetype detect`
+  return `autocmd! coc_dynamic_content BufReadCmd,FileReadCmd,SourceCmd ${scheme}:/* ${rhs}`
 }

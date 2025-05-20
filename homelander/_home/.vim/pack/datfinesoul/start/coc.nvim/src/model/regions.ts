@@ -1,3 +1,4 @@
+'use strict'
 /**
  * Remember used regions
  */
@@ -14,6 +15,10 @@ export default class Regions {
       res.push(o[0], o[1])
     })
     return res
+  }
+
+  public clear(): void {
+    this.ranges = []
   }
 
   public add(start: number, end: number): void {

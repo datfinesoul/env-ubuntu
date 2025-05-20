@@ -1,13 +1,13 @@
-import { Neovim } from '@chemzqm/neovim'
-import { Disposable } from 'vscode-languageserver-protocol'
+'use strict'
+import { Neovim } from '../neovim'
 import { URI } from 'vscode-uri'
 import events from '../events'
 import BufferChannel from '../model/outputChannel'
 import { TextDocumentContentProvider } from '../provider'
 import { OutputChannel } from '../types'
-const logger = require('../util/logger')('core-channels')
+import { Disposable } from '../util/protocol'
 
-export class Channels {
+class Channels {
   private outputChannels: Map<string, BufferChannel> = new Map()
   private bufnrs: Map<number, string> = new Map()
   private disposable: Disposable
@@ -36,10 +36,8 @@ export class Channels {
         nvim.command('setlocal buftype=nofile bufhidden=hide', true)
         nvim.command('setfiletype log', true)
         let res = await nvim.resumeNotification()
-        if (!res[1]) {
-          this.bufnrs.set(res[0][0], channel.name)
-          channel.created = true
-        }
+        this.bufnrs.set(res[0][0] as number, channel.name)
+        channel.created = true
         return channel.content
       }
     }
@@ -63,10 +61,10 @@ export class Channels {
     return channel
   }
 
-  public show(name: string, preserveFocus?: boolean): void {
+  public show(name: string, cmd: string, preserveFocus?: boolean): void {
     let channel = this.outputChannels.get(name)
     if (!channel) return
-    channel.show(preserveFocus)
+    channel.show(preserveFocus, cmd)
   }
 
   public dispose(): void {

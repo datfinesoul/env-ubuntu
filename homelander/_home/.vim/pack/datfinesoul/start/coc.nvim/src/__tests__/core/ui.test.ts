@@ -1,4 +1,4 @@
-import { Neovim } from '@chemzqm/neovim'
+import { Neovim } from '../../neovim'
 import { Position, Range } from 'vscode-languageserver-types'
 import * as ui from '../../core/ui'
 import helper from '../helper'
@@ -47,12 +47,40 @@ describe('getCursorScreenPosition()', () => {
   })
 })
 
+describe('createFloatFactory()', () => {
+  it('should create FloatFactory', async () => {
+    let f = ui.createFloatFactory(nvim, { border: true, autoHide: false, breaks: false }, { close: true })
+    await f.show([{ content: 'shown', filetype: 'txt' }])
+    let activated = await f.activated()
+    expect(activated).toBe(true)
+    expect(f.window != null).toBe(true)
+    let win = await helper.getFloat()
+    expect(win).toBeDefined()
+    let id = await nvim.call('coc#float#get_related', [win.id, 'border', 0]) as number
+    expect(id).toBeGreaterThan(0)
+    id = await nvim.call('coc#float#get_related', [win.id, 'close', 0]) as number
+    expect(id).toBeGreaterThan(0)
+    await f.show([{ content: 'shown', filetype: 'txt' }], { offsetX: 10 })
+    let curr = await helper.getFloat()
+    expect(curr.id).toBe(win.id)
+  })
+})
+
 describe('showMessage()', () => {
   it('should showMessage on vim', async () => {
-    ui.showMessage(nvim, 'my message', 'MoreMsg', true)
-    await helper.wait(100)
+    ui.echoMessages(nvim, 'my message', 'more', 'more')
+    await helper.wait(50)
     let cmdline = await helper.getCmdline()
     expect(cmdline).toMatch(/my message/)
+  })
+
+  it('should get messageLevel', () => {
+    let level = ui.toMessageLevel('error')
+    expect(level).toBe(ui.MessageLevel.Error)
+    level = ui.toMessageLevel('warning')
+    expect(level).toBe(ui.MessageLevel.Warning)
+    level = ui.toMessageLevel('more')
+    expect(level).toBe(ui.MessageLevel.More)
   })
 })
 
@@ -68,6 +96,12 @@ describe('getSelection()', () => {
     await nvim.input('<esc>')
     let res = await ui.getSelection(nvim, 'V')
     expect(res).toEqual({ start: { line: 0, character: 0 }, end: { line: 1, character: 0 } })
+  })
+
+  it('should return range of current line', async () => {
+    await nvim.command('normal! gg')
+    let res = await ui.getSelection(nvim, 'currline')
+    expect(res).toEqual(Range.create(0, 0, 1, 0))
   })
 })
 
@@ -88,5 +122,13 @@ describe('selectRange()', () => {
     await nvim.input('<esc>')
     let res = await ui.getSelection(nvim, 'v')
     expect(res).toEqual(Range.create(0, 0, 0, 3))
+  })
+
+  it('should select range #3', async () => {
+    await ui.selectRange(nvim, Range.create(0, 0, 0, 0), true)
+    let m = await nvim.mode
+    expect(m.mode).toBe('v')
+    await nvim.input('<esc>')
+    await ui.selectRange(nvim, Range.create(0, 0, 0, 1), true)
   })
 })

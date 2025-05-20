@@ -3,7 +3,7 @@
 source "$(dirname "${0}")/_core.bash"
 
 if [[ "${kernel_name}" == "Darwin" ]]; then
-  brew install git
+  brew install git git-lfs
 else
   sudo add-apt-repository --yes ppa:git-core/ppa
   sudo apt-get --yes update

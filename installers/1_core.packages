@@ -1,4 +1,5 @@
 bash-completion
+gettext
 tmux
 pwgen
 apg
@@ -20,3 +21,4 @@ build-essential
 git-lfs
 vim
 bat
+libncurses-dev

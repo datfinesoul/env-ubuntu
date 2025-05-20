@@ -1,18 +1,19 @@
-import { Neovim } from '@chemzqm/neovim'
-import fs from 'fs'
-import path from 'path'
-import readline from 'readline'
-import { CancellationToken, Disposable, Location, Position, Range } from 'vscode-languageserver-protocol'
+'use strict'
+import { Neovim } from '../neovim'
+import { Location, Range } from 'vscode-languageserver-types'
 import { URI } from 'vscode-uri'
+import { WorkspaceConfiguration } from '../configuration/types'
 import { ProviderResult } from '../provider'
-import { IList, ListAction, ListArgument, ListContext, ListItem, ListTask, LocationWithLine, WorkspaceConfiguration } from '../types'
+import { LocationWithTarget } from '../types'
 import { disposeAll } from '../util'
-import { readFile } from '../util/fs'
+import { lineToLocation } from '../util/fs'
 import { comparePosition, emptyRange } from '../util/position'
+import { CancellationToken, Disposable } from '../util/protocol'
+import { toText } from '../util/string'
 import workspace from '../workspace'
 import CommandTask, { CommandTaskOption } from './commandTask'
-import ListConfiguration from './configuration'
-const logger = require('../util/logger')('list-basic')
+import listConfiguration, { ListConfiguration } from './configuration'
+import { IList, ListAction, ListArgument, ListContext, ListItem, ListTask, LocationWithLine, MultipleListAction, SingleListAction } from './types'
 
 interface ActionOptions {
   persist?: boolean
@@ -27,6 +28,7 @@ interface ArgumentItem {
 }
 
 interface PreviewConfig {
+  bufnr?: number
   winid: number
   position: string
   hlGroup: string
@@ -37,13 +39,14 @@ interface PreviewConfig {
   filetype?: string
   range?: Range
   scheme?: string
+  targetRange?: Range
   toplineStyle: string
   toplineOffset: number
 }
 
 export interface PreviewOptions {
   bufname?: string
-  filetype: string
+  filetype?: string
   lines: string[]
   lnum?: number
   range?: Range
@@ -56,35 +59,41 @@ export default abstract class BasicList implements IList, Disposable {
   public readonly actions: ListAction[] = []
   public options: ListArgument[] = []
   protected disposables: Disposable[] = []
+  protected nvim: Neovim
   private optionMap: Map<string, ArgumentItem>
   public config: ListConfiguration
 
-  constructor(protected nvim: Neovim) {
-    this.config = new ListConfiguration()
+  constructor() {
+    this.nvim = workspace.nvim
+    this.config = listConfiguration
   }
 
   public get alignColumns(): boolean {
-    return this.config.get('alignColumns', false)
+    return listConfiguration.get('alignColumns', false)
+  }
+
+  protected get floatPreview(): boolean {
+    return listConfiguration.get('floatPreview', false)
   }
 
   protected get hlGroup(): string {
-    return this.config.get('previewHighlightGroup', 'Search')
+    return listConfiguration.get('previewHighlightGroup', 'Search')
   }
 
   protected get previewHeight(): number {
-    return this.config.get('maxPreviewHeight', 12)
+    return listConfiguration.get('maxPreviewHeight', 12)
   }
 
   protected get splitRight(): boolean {
-    return this.config.get('previewSplitRight', false)
+    return listConfiguration.get('previewSplitRight', false)
   }
 
   protected get toplineStyle(): string {
-    return this.config.get('previewToplineStyle', 'offset')
+    return listConfiguration.get('previewToplineStyle', 'offset')
   }
 
   protected get toplineOffset(): number {
-    return this.config.get('previewToplineOffset', 3)
+    return listConfiguration.get('previewToplineOffset', 3)
   }
 
   public parseArguments(args: string[]): { [key: string]: string | boolean } {
@@ -105,7 +114,7 @@ export default abstract class BasicList implements IList, Disposable {
       if (!def) continue
       let value: string | boolean = true
       if (def.hasValue) {
-        value = args[i + 1] || ''
+        value = toText(args[i + 1])
         i = i + 1
       }
       res[def.name] = value
@@ -124,7 +133,7 @@ export default abstract class BasicList implements IList, Disposable {
     this.createAction(Object.assign({
       name,
       execute: fn
-    }, options || {}))
+    } as any, options || {}))
   }
 
   protected addMultipleAction(name: string, fn: (item: ListItem[], context: ListContext) => ProviderResult<void>, options?: ActionOptions): void {
@@ -169,41 +178,12 @@ export default abstract class BasicList implements IList, Disposable {
     }
   }
 
-  public async convertLocation(location: Location | LocationWithLine | string): Promise<Location> {
+  public async convertLocation(location: LocationWithTarget | LocationWithLine | string): Promise<LocationWithTarget> {
     if (typeof location == 'string') return Location.create(location, Range.create(0, 0, 0, 0))
     if (Location.is(location)) return location
     let u = URI.parse(location.uri)
     if (u.scheme != 'file') return Location.create(location.uri, Range.create(0, 0, 0, 0))
-    const rl = readline.createInterface({
-      input: fs.createReadStream(u.fsPath, { encoding: 'utf8' }),
-    })
-    let match = location.line
-    let n = 0
-    let resolved = false
-    let line = await new Promise<string>(resolve => {
-      rl.on('line', line => {
-        if (resolved) return
-        if (line.includes(match)) {
-          rl.removeAllListeners()
-          rl.close()
-          resolved = true
-          resolve(line)
-          return
-        }
-        n = n + 1
-      })
-      rl.on('error', e => {
-        this.nvim.errWriteLine(`Read ${u.fsPath} error: ${e.message}`)
-        resolve(null)
-      })
-    })
-    if (line != null) {
-      let character = location.text ? line.indexOf(location.text) : 0
-      if (character == 0) character = line.match(/^\s*/)[0].length
-      let end = Position.create(n, character + (location.text ? location.text.length : 0))
-      return Location.create(location.uri, Range.create(Position.create(n, character), end))
-    }
-    return Location.create(location.uri, Range.create(0, 0, 0, 0))
+    return await lineToLocation(u.fsPath, location.line, location.text)
   }
 
   public async jumpTo(location: Location | LocationWithLine | string, command?: string, context?: ListContext): Promise<void> {
@@ -223,7 +203,7 @@ export default abstract class BasicList implements IList, Disposable {
     await workspace.jumpTo(uri, position, command)
   }
 
-  public createAction(action: ListAction): void {
+  public createAction(action: SingleListAction | MultipleListAction): void {
     let { name } = action
     let idx = this.actions.findIndex(o => o.name == name)
     // allow override
@@ -231,29 +211,18 @@ export default abstract class BasicList implements IList, Disposable {
     this.actions.push(action)
   }
 
-  protected async previewLocation(location: Location, context: ListContext): Promise<void> {
-    if (!context.listWindow) return
-    let { nvim } = this
+  protected async previewLocation(location: LocationWithTarget, context: ListContext): Promise<void> {
     let { uri, range } = location
     let doc = workspace.getDocument(location.uri)
     let u = URI.parse(uri)
-    let lines: string[] = []
-    if (doc) {
-      lines = doc.getLines()
-    } else if (u.scheme == 'file') {
-      try {
-        let content = await readFile(u.fsPath, 'utf8')
-        lines = content.split(/\r?\n/)
-      } catch (e) {
-        [`Error on read file ${u.fsPath}`, e.message]
-      }
-    }
+    let lines = await workspace.documentsManager.getLines(uri)
     let config: PreviewConfig = {
+      bufnr: doc ? doc.bufnr : undefined,
       winid: context.window.id,
       range: emptyRange(range) ? null : range,
       lnum: range.start.line + 1,
       name: u.scheme == 'file' ? u.fsPath : uri,
-      filetype: toVimFiletype(doc ? doc.languageId : this.getLanguageId(u.fsPath)),
+      filetype: toVimFiletype(doc ? doc.languageId : workspace.documentsManager.getLanguageId(u.fsPath)),
       position: context.options.position,
       maxHeight: this.previewHeight,
       splitRight: this.splitRight,
@@ -261,18 +230,17 @@ export default abstract class BasicList implements IList, Disposable {
       scheme: u.scheme,
       toplineStyle: this.toplineStyle,
       toplineOffset: this.toplineOffset,
+      targetRange: location.targetRange
     }
-    await nvim.call('coc#list#preview', [lines, config])
-    nvim.command('redraw', true)
+    await this.openPreview(lines, config)
   }
 
   public async preview(options: PreviewOptions, context: ListContext): Promise<void> {
-    let { nvim } = this
     let { bufname, filetype, range, lines, lnum } = options
     let config: PreviewConfig = {
       winid: context.window.id,
       lnum: range ? range.start.line + 1 : lnum || 1,
-      filetype: filetype || 'txt',
+      filetype,
       position: context.options.position,
       maxHeight: this.previewHeight,
       splitRight: this.splitRight,
@@ -282,7 +250,16 @@ export default abstract class BasicList implements IList, Disposable {
     }
     if (bufname) config.name = bufname
     if (range) config.range = range
-    await nvim.call('coc#list#preview', [lines, config])
+    await this.openPreview(lines, config)
+  }
+
+  private async openPreview(lines: ReadonlyArray<string>, config: PreviewConfig): Promise<void> {
+    let { nvim } = this
+    if (this.floatPreview && config.position !== 'tab') {
+      await nvim.call('coc#list#float_preview', [lines, config])
+    } else {
+      await nvim.call('coc#list#preview', [lines, config])
+    }
     nvim.command('redraw', true)
   }
 
@@ -294,21 +271,6 @@ export default abstract class BasicList implements IList, Disposable {
 
   public dispose(): void {
     disposeAll(this.disposables)
-  }
-
-  /**
-   * Get filetype by check same extension name buffer.
-   */
-  private getLanguageId(filepath: string): string {
-    let extname = path.extname(filepath)
-    if (!extname) return ''
-    for (let doc of workspace.documents) {
-      let fsPath = URI.parse(doc.uri).fsPath
-      if (path.extname(fsPath) == extname) {
-        return doc.languageId
-      }
-    }
-    return ''
   }
 }
 

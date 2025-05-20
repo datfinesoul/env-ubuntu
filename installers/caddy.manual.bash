@@ -9,14 +9,25 @@ repo="caddyserver/caddy"
 releases="$(curl -s "https://api.github.com/repos/${repo}/releases/latest")"
 
 # NOTE: sometimes you need ${kernel_name,,}
-read -r version url <<< "$(
-  printf "%s\n" "${releases}" \
-  | jq \
-  --arg k "${kernel_name,,}" \
-  --arg a "${architecture}" \
-  --arg m "${machine}" \
-  -r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$a+".tar.gz$")))] | @tsv'
-)"
+if [[ "$kernel_name" == 'Darwin' ]]; then
+	read -r version url <<< "$(
+		printf "%s\n" "${releases}" \
+		| jq \
+		--arg k "mac" \
+		--arg a "${architecture}" \
+		--arg m "${machine}" \
+		-r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$a+".tar.gz$")))] | @tsv'
+	)"
+else
+	read -r version url <<< "$(
+		printf "%s\n" "${releases}" \
+		| jq \
+		--arg k "${kernel_name,,}" \
+		--arg a "${architecture}" \
+		--arg m "${machine}" \
+		-r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$a+".tar.gz$")))] | @tsv'
+	)"
+fi
 
 info "V:${version}"
 info "U:${url}"
@@ -36,7 +47,9 @@ info "ZF:${zip_file}"
 info "E:${executable}"
 info "VE:${versioned_exe}"
 
-gh release download "${version}" -R "${repo}" -p "${zip_file}"
+#gh release download "${version}" -R "${repo}" -p "${zip_file}"
+curl -o caddy "https://caddyserver.com/api/download?os=${kernel_name,,}&arch=${architecture}&p=github.com%2Fcaddyserver%2Fforwardproxy"
+chmod 770 caddy
 
 target_dir="${HOME}/.local/${executable}"
 bin_dir="${HOME}/.local/bin"
@@ -44,7 +57,7 @@ bin_dir="${HOME}/.local/bin"
 mkdir -p "${target_dir}"
 mkdir -p "${bin_dir}"
 
-tar xzf "${zip_file}"
+#tar xzf "${zip_file}"
 #tar xf "${zip_file}"
 #unzip "${zip_file}"
 

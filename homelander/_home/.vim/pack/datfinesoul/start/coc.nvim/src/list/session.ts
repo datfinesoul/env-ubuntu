@@ -1,19 +1,20 @@
-import { Buffer, Neovim, Window } from '@chemzqm/neovim'
-import debounce from 'debounce'
-import { Disposable } from 'vscode-languageserver-protocol'
-import extensions from '../extensions'
-import Highlighter from '../model/highligher'
-import { IList, ListAction, ListContext, ListItem, ListMode, ListOptions, Matcher } from '../types'
-import { disposeAll, wait } from '../util'
+'use strict'
+import type { Buffer, Neovim, Window } from '../neovim'
+import Highlighter from '../model/highlighter'
+import { defaultValue, disposeAll, getConditionValue, wait } from '../util'
+import { debounce } from '../util/node'
+import { Disposable } from '../util/protocol'
 import window from '../window'
 import workspace from '../workspace'
-import ListConfiguration from './configuration'
+import listConfiguration from './configuration'
+import db from './db'
 import InputHistory from './history'
 import Prompt from './prompt'
+import { IList, ListAction, ListContext, ListItem, ListMode, ListOptions, Matcher } from './types'
 import UI from './ui'
 import Worker from './worker'
 const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-const logger = require('../util/logger')('list-session')
+const debounceTime = getConditionValue(50, 1)
 
 /**
  * Activated list session with UI and worker
@@ -23,15 +24,13 @@ export default class ListSession {
   public readonly ui: UI
   public readonly worker: Worker
   private cwd: string
-  private interval: NodeJS.Timer
   private loadingFrame = ''
-  private timer: NodeJS.Timer
+  private timer: NodeJS.Timeout
   private hidden = false
   private disposables: Disposable[] = []
   private savedHeight: number
-  private window: Window
-  private buffer: Buffer
-  private interactiveDebounceTime: number
+  private targetWinid: number | undefined
+  private targetBufnr: number | undefined
   /**
    * Original list arguments.
    */
@@ -41,23 +40,18 @@ export default class ListSession {
     private prompt: Prompt,
     private list: IList,
     public readonly listOptions: ListOptions,
-    private listArgs: string[] = [],
-    private config: ListConfiguration
+    private listArgs: string[]
   ) {
-    this.ui = new UI(nvim, list.name, listOptions, config)
-    this.history = new InputHistory(prompt, list.name)
-    this.worker = new Worker(nvim, list, prompt, listOptions, {
-      interactiveDebounceTime: config.get<number>('interactiveDebounceTime', 100),
-      extendedSearchMode: config.get<boolean>('extendedSearchMode', true)
-    })
-    this.interactiveDebounceTime = config.get<number>('interactiveDebounceTime', 100)
+    this.ui = new UI(nvim, list.name, listOptions)
+    this.history = new InputHistory(prompt, list.name, db, workspace.cwd)
+    this.worker = new Worker(list, prompt, listOptions)
     let debouncedChangeLine = debounce(async () => {
       let [previewing, currwin, lnum] = await nvim.eval('[coc#list#has_preview(),win_getid(),line(".")]') as [number, number, number]
       if (previewing && currwin == this.winid) {
         let idx = this.ui.lnumToIndex(lnum)
         await this.doPreview(idx)
       }
-    }, 50)
+    }, debounceTime)
     this.disposables.push({
       dispose: () => {
         debouncedChangeLine.clear()
@@ -71,7 +65,7 @@ export default class ListSession {
       let { autoPreview } = this.listOptions
       if (!autoPreview) {
         let [previewing, mode] = await nvim.eval('[coc#list#has_preview(),mode()]') as [number, string]
-        if (!previewing || mode != 'n') return
+        if (mode != 'n' || !previewing) return
       }
       await this.doAction('preview')
     }, 50)
@@ -85,44 +79,41 @@ export default class ListSession {
       if (typeof this.list.doHighlight == 'function') {
         this.list.doHighlight()
       }
-      if (workspace.isVim) this.prompt.drawPrompt()
       if (this.listOptions.first) {
         await this.doAction()
       }
     }, null, this.disposables)
-    this.ui.onDidClose(async () => {
-      await this.hide()
-    }, null, this.disposables)
-    this.ui.onDidDoubleClick(async () => {
-      await this.doAction()
-    }, null, this.disposables)
-    this.worker.onDidChangeItems(async ({ items, reload, append, finished }) => {
+    this.ui.onDidClose(this.hide as any, this, this.disposables)
+    this.ui.onDidDoubleClick(this.doAction as any, this, this.disposables)
+    this.worker.onDidChangeItems(ev => {
       if (this.hidden) return
-      if (append) {
-        await this.ui.appendItems(items)
-      } else {
-        let height = this.config.get<number>('height', 10)
-        if (finished && !listOptions.interactive && listOptions.input.length == 0) {
-          height = Math.min(items.length, height)
-        }
-        await this.ui.drawItems(items, Math.max(1, height), reload)
-      }
+      this.ui.onDidChangeItems(ev)
     }, null, this.disposables)
+    let start = 0
+    let timer: NodeJS.Timeout
+    let interval: NodeJS.Timeout
+    this.disposables.push(Disposable.create(() => {
+      clearTimeout(timer)
+      clearInterval(interval)
+    }))
     this.worker.onDidChangeLoading(loading => {
       if (this.hidden) return
+      if (timer) clearTimeout(timer)
       if (loading) {
-        this.interval = setInterval(() => {
-          let idx = Math.floor((new Date()).getMilliseconds() / 100)
+        start = Date.now()
+        if (interval) clearInterval(interval)
+        interval = setInterval(() => {
+          let idx = Math.floor((Date.now() - start) % 1000 / 100)
           this.loadingFrame = frames[idx]
           this.updateStatus()
         }, 100)
       } else {
-        if (this.interval) {
+        timer = setTimeout(() => {
           this.loadingFrame = ''
-          clearInterval(this.interval)
-          this.interval = null
-        }
-        this.updateStatus()
+          if (interval) clearInterval(interval)
+          interval = null
+          this.updateStatus()
+        }, Math.max(0, 200 - (Date.now() - start)))
       }
     }, null, this.disposables)
   }
@@ -131,18 +122,18 @@ export default class ListSession {
     this.args = args
     this.cwd = workspace.cwd
     this.hidden = false
-    let { listOptions, listArgs } = this
-    let res = await this.nvim.eval('[win_getid(),bufnr("%"),winheight("%")]')
+    let { listArgs } = this
+    let res = await this.nvim.eval(`[win_getid(),bufnr("%"),${workspace.isVim ? 'winheight("%")' : 'nvim_win_get_height(0)'}]`)
     this.listArgs = listArgs
-    this.history.load(listOptions.input || '')
-    this.window = this.nvim.createWindow(res[0])
-    this.buffer = this.nvim.createBuffer(res[1])
+    this.history.filter()
+    this.targetWinid = res[0]
+    this.targetBufnr = res[1]
     this.savedHeight = res[2]
     await this.worker.loadItems(this.context)
   }
 
   public async reloadItems(): Promise<void> {
-    if (!this.window || !this.ui.winid) return
+    if (!this.ui.winid) return
     await this.worker.loadItems(this.context, true)
   }
 
@@ -153,8 +144,8 @@ export default class ListSession {
       name: this.name,
       args: this.listArgs,
       input: this.prompt.input,
-      winid: this.window?.id,
-      bufnr: this.buffer?.id,
+      winid: this.targetWinid,
+      bufnr: this.targetBufnr,
       targets
     }
     let res = await this.nvim.call(fname, [context])
@@ -174,7 +165,7 @@ export default class ListSession {
     let shortcuts: Set<string> = new Set()
     let choices: string[] = []
     let invalids: string[] = []
-    let menuAction = workspace.env.dialog && this.config.get('menuAction', false)
+    let menuAction = workspace.env.dialog && listConfiguration.get('menuAction', false)
     for (let name of names) {
       let i = 0
       for (let ch of name) {
@@ -197,7 +188,6 @@ export default class ListSession {
       nvim.call('coc#prompt#stop_prompt', ['list'], true)
       n = await window.showMenuPicker(names, { title: 'Choose action', shortcuts: true })
       n = n + 1
-      if (workspace.isVim) await wait(10)
       this.prompt.start()
     } else {
       await nvim.call('coc#prompt#stop_prompt', ['list'])
@@ -214,7 +204,7 @@ export default class ListSession {
     if (name != null) {
       action = list.actions.find(o => o.name == name)
       if (!action) {
-        window.showMessage(`Action ${name} not found`, 'error')
+        void window.showErrorMessage(`Action ${name} not found`)
         return
       }
     } else {
@@ -230,7 +220,7 @@ export default class ListSession {
     if (items.length) await this.doItemAction(items, action)
   }
 
-  private async doPreview(index: number): Promise<void> {
+  public async doPreview(index: number): Promise<void> {
     let item = this.ui.getItem(index)
     let action = this.list.actions.find(o => o.name == 'preview')
     if (!item || !action) return
@@ -257,7 +247,7 @@ export default class ListSession {
     let { ui } = this
     let item = ui.getItem(index)
     if (!item) return
-    ui.index = index
+    await this.ui.setIndex(index)
     await this.doItemAction([item], this.defaultAction)
     await ui.echoMessage(item)
   }
@@ -271,7 +261,6 @@ export default class ListSession {
 
   /**
    * Window id used by list.
-   *
    * @returns {number | undefined}
    */
   public get winid(): number | undefined {
@@ -293,31 +282,26 @@ export default class ListSession {
     return action
   }
 
-  public async hide(notify = false): Promise<void> {
+  public async hide(notify = false, isVim = workspace.isVim): Promise<void> {
     if (this.hidden) return
-    let { nvim, timer, interval, window } = this
-    let { winid, tabnr } = this.ui
+    let { nvim, timer, targetWinid, context } = this
+    let { winid } = this.ui
     if (timer) clearTimeout(timer)
-    if (interval) clearInterval(interval)
-    this.hidden = true
     this.worker.stop()
     this.history.add()
     this.ui.reset()
-    let { isVim } = workspace
+    db.save()
+    this.hidden = true
     nvim.pauseNotification()
     if (!isVim) nvim.call('coc#prompt#stop_prompt', ['list'], true)
-    if (tabnr) nvim.call('coc#list#close_preview', [tabnr], true)
-    if (window) nvim.call('win_gotoid', [window.id], true)
-    if (winid) nvim.call('coc#window#close', [winid], true)
-    if (window && this.savedHeight && this.listOptions.position !== 'tab') {
-      nvim.call('coc#window#set_heigth', [window.id, this.savedHeight], true)
-    }
-    await nvim.resumeNotification(false, notify)
-    if (isVim && !notify) {
-      // otherwise we could receive <esc> for new list.
+    if (winid) nvim.call('coc#list#close', [winid, context.options.position, targetWinid, this.savedHeight], true)
+    if (notify) return nvim.resumeNotification(true, true)
+    await nvim.resumeNotification(false)
+    if (isVim) {
+      // required on vim
       await wait(10)
-      nvim.call('feedkeys', ['\x1b', 'int'], true)
-      nvim.command('redraw', true)
+      nvim.call('coc#prompt#stop_prompt', ['list'], true)
+      nvim.redrawVim()
     }
   }
 
@@ -332,15 +316,18 @@ export default class ListSession {
     this.worker.stop()
   }
 
-  private async resolveItem(): Promise<void> {
+  public async resolveItem(): Promise<void> {
     let index = this.ui.index
     let item = this.ui.getItem(index)
     if (!item || item.resolved) return
     let { list } = this
-    if (typeof list.resolveItem == 'function') {
+    if (typeof list.resolveItem === 'function') {
+      let label = item.label
       let resolved = await Promise.resolve(list.resolveItem(item))
       if (resolved && index == this.ui.index) {
-        await this.ui.updateItem(resolved, index)
+        Object.assign(item, resolved, { resolved: true })
+        if (label == resolved.label) return
+        this.ui.updateItem(item, index)
       }
     }
   }
@@ -348,68 +335,52 @@ export default class ListSession {
   public async showHelp(): Promise<void> {
     await this.hide()
     let { list, nvim } = this
-    if (!list) return
     nvim.pauseNotification()
     nvim.command(`tabe +setl\\ previewwindow [LIST HELP]`, true)
     nvim.command('setl nobuflisted noswapfile buftype=nofile bufhidden=wipe', true)
     await nvim.resumeNotification()
     let hasOptions = list.options && list.options.length
     let buf = await nvim.buffer
-    let highligher = new Highlighter()
-    highligher.addLine('NAME', 'Label')
-    highligher.addLine(`  ${list.name} - ${list.description || ''}\n`)
-    highligher.addLine('SYNOPSIS', 'Label')
-    highligher.addLine(`  :CocList [LIST OPTIONS] ${list.name}${hasOptions ? ' [ARGUMENTS]' : ''}\n`)
+    let highlighter = new Highlighter()
+    highlighter.addLine('NAME', 'Label')
+    highlighter.addLine(`  ${list.name} - ${list.description || ''}\n`)
+    highlighter.addLine('SYNOPSIS', 'Label')
+    highlighter.addLine(`  :CocList [LIST OPTIONS] ${list.name}${hasOptions ? ' [ARGUMENTS]' : ''}\n`)
     if (list.detail) {
-      highligher.addLine('DESCRIPTION', 'Label')
+      highlighter.addLine('DESCRIPTION', 'Label')
       let lines = list.detail.split('\n').map(s => '  ' + s)
-      highligher.addLine(lines.join('\n') + '\n')
+      highlighter.addLine(lines.join('\n') + '\n')
     }
     if (hasOptions) {
-      highligher.addLine('ARGUMENTS', 'Label')
-      highligher.addLine('')
+      highlighter.addLine('ARGUMENTS', 'Label')
+      highlighter.addLine('')
       for (let opt of list.options) {
-        highligher.addLine(opt.name, 'Special')
-        highligher.addLine(`  ${opt.description}`)
-        highligher.addLine('')
+        highlighter.addLine(opt.name, 'Special')
+        highlighter.addLine(`  ${opt.description}`)
+        highlighter.addLine('')
       }
-      highligher.addLine('')
+      highlighter.addLine('')
     }
     let config = workspace.getConfiguration(`list.source.${list.name}`)
     if (Object.keys(config).length) {
-      highligher.addLine('CONFIGURATIONS', 'Label')
-      highligher.addLine('')
-      let props = {}
-      extensions.all.forEach(extension => {
-        let { packageJSON } = extension
-        let { contributes } = packageJSON
-        if (!contributes) return
-        let { configuration } = contributes
-        if (configuration) {
-          let { properties } = configuration
-          if (properties) {
-            for (let key of Object.keys(properties)) {
-              props[key] = properties[key]
-            }
-          }
-        }
-      })
+      highlighter.addLine('CONFIGURATIONS', 'Label')
+      highlighter.addLine('')
       for (let key of Object.keys(config)) {
         let val = config[key]
         let name = `list.source.${list.name}.${key}`
-        let description = props[name] && props[name].description ? props[name].description : key
-        highligher.addLine(`  "${name}"`, 'MoreMsg')
-        highligher.addText(` - ${description}, current value: `)
-        highligher.addText(JSON.stringify(val), 'Special')
+        let description = defaultValue(workspace.configurations.getDescription(name), key)
+        highlighter.addLine(`  "${name}"`, 'MoreMsg')
+        highlighter.addText(` - ${description} current value: `)
+        highlighter.addText(JSON.stringify(val), 'Special')
       }
-      highligher.addLine('')
+      highlighter.addLine('')
     }
-    highligher.addLine('ACTIONS', 'Label')
-    highligher.addLine(`  ${list.actions.map(o => o.name).join(', ')}`)
-    highligher.addLine('')
-    highligher.addLine(`see ':h coc-list-options' for available list options.`, 'Comment')
+    highlighter.addLine('ACTIONS', 'Label')
+    highlighter.addLine(`  ${list.actions.map(o => o.name).join(', ')}`)
+    highlighter.addLine('')
+    highlighter.addLine(`see ':h coc-list-options' for available list options.`, 'Comment')
     nvim.pauseNotification()
-    highligher.render(buf, 0, -1)
+    highlighter.render(buf, 0, -1)
     nvim.command('setl nomod', true)
     nvim.command('setl nomodifiable', true)
     nvim.command('normal! gg', true)
@@ -417,7 +388,7 @@ export default class ListSession {
     await nvim.resumeNotification()
   }
 
-  public switchMatcher(): void {
+  public async switchMatcher(): Promise<void> {
     let { matcher, interactive } = this.listOptions
     if (interactive) return
     const list: Matcher[] = ['fuzzy', 'strict', 'regex']
@@ -425,12 +396,12 @@ export default class ListSession {
     if (idx >= list.length) idx = 0
     this.listOptions.matcher = list[idx]
     this.prompt.matcher = list[idx]
-    this.worker.drawItems()
+    await this.worker.drawItems()
   }
 
   private updateStatus(): void {
     let { ui, list, nvim } = this
-    if (!ui.winid) return
+    if (!ui.bufnr) return
     let buf = nvim.createBuffer(ui.bufnr)
     let status = {
       mode: this.prompt.mode.toUpperCase(),
@@ -455,6 +426,14 @@ export default class ListSession {
       buffer: this.buffer,
       listWindow: winid ? this.nvim.createWindow(winid) : undefined
     }
+  }
+
+  private get window(): Window | undefined {
+    return this.targetWinid ? this.nvim.createWindow(this.targetWinid) : undefined
+  }
+
+  private get buffer(): Buffer | undefined {
+    return this.targetBufnr ? this.nvim.createBuffer(this.targetBufnr) : undefined
   }
 
   public onMouseEvent(key): Promise<void> {
@@ -488,21 +467,21 @@ export default class ListSession {
   }
 
   public jumpBack(): void {
-    let { window, nvim } = this
-    if (window) {
+    let { targetWinid, nvim } = this
+    if (targetWinid) {
       nvim.pauseNotification()
       nvim.call('coc#prompt#stop_prompt', ['list'], true)
-      this.nvim.call('win_gotoid', [window.id], true)
-      nvim.resumeNotification(false, true).logError()
+      this.nvim.call('win_gotoid', [targetWinid], true)
+      nvim.resumeNotification(false, true)
     }
   }
 
   public async resume(): Promise<void> {
     if (this.winid) await this.hide()
-    let res = await this.nvim.eval('[win_getid(),bufnr("%"),winheight("%")]')
+    let res = await this.nvim.eval(`[win_getid(),bufnr("%"),${workspace.isVim ? 'winheight("%")' : 'nvim_win_get_height(0)'}]`)
     this.hidden = false
-    this.window = this.nvim.createWindow(res[0])
-    this.buffer = this.nvim.createBuffer(res[1])
+    this.targetWinid = res[0]
+    this.targetBufnr = res[1]
     this.savedHeight = res[2]
     this.prompt.start()
     await this.ui.resume()
@@ -517,51 +496,46 @@ export default class ListSession {
     let persistAction = action.persist === true || action.name == 'preview'
     if (position === 'tab' && action.tabPersist) persistAction = true
     let persist = this.winid && (persistAction || noQuit)
-    try {
-      if (persist) {
-        if (!persistAction) {
-          nvim.pauseNotification()
-          nvim.call('coc#prompt#stop_prompt', ['list'], true)
-          nvim.call('win_gotoid', [this.context.window.id], true)
-          await nvim.resumeNotification()
-        }
-      } else {
-        await this.hide()
+    if (persist) {
+      if (!persistAction) {
+        nvim.pauseNotification()
+        nvim.call('coc#prompt#stop_prompt', ['list'], true)
+        nvim.call('win_gotoid', [this.context.window.id], true)
+        await nvim.resumeNotification()
       }
-      if (action.multiple) {
-        await Promise.resolve(action.execute(items, this.context))
-      } else if (action.parallel) {
-        await Promise.all(items.map(item => Promise.resolve(action.execute(item, this.context))))
-      } else {
-        for (let item of items) {
-          await Promise.resolve(action.execute(item, this.context))
-        }
+    } else {
+      await this.hide()
+    }
+    if (action.multiple) {
+      await Promise.resolve(action.execute(items, this.context))
+    } else if (action.parallel) {
+      await Promise.all(items.map(item => Promise.resolve(action.execute(item, this.context))))
+    } else {
+      for (let item of items) {
+        await Promise.resolve(action.execute(item, this.context))
       }
-      if (persist) {
-        this.ui.restoreWindow()
-      }
-      if (action.reload && persist) await this.worker.loadItems(this.context, true)
-    } catch (e) {
-      window.showMessage(e.message, 'error')
-      logger.error(`Error on action "${action.name}"`, e)
+    }
+    if (persist) this.ui.restoreWindow()
+    if (action.reload && persist) {
+      await this.reloadItems()
+    } else if (persist) {
+      this.nvim.command('redraw', true)
     }
   }
 
   public onInputChange(): void {
     if (this.timer) clearTimeout(this.timer)
-    let len = this.worker.length
+    this.ui.cancel()
+    this.history.filter()
     this.listOptions.input = this.prompt.input
     // reload or filter items
     if (this.listOptions.interactive) {
       this.worker.stop()
       this.timer = setTimeout(async () => {
         await this.worker.loadItems(this.context)
-      }, this.interactiveDebounceTime)
-    } else if (len) {
-      let wait = Math.max(Math.min(Math.floor(len / 200), 300), 50)
-      this.timer = setTimeout(() => {
-        this.worker.drawItems()
-      }, wait)
+      }, listConfiguration.debounceTime)
+    } else {
+      void this.worker.drawItems()
     }
   }
 

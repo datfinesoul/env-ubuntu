@@ -1,12 +1,13 @@
-import { Neovim } from '@chemzqm/neovim'
+import { Neovim } from '../../neovim'
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { Disposable, WorkspaceFoldersChangeEvent } from 'vscode-languageserver-protocol'
+import { Disposable, WorkspaceFolder, WorkspaceFoldersChangeEvent } from 'vscode-languageserver-protocol'
 import { URI } from 'vscode-uri'
 import Configurations from '../../configuration/index'
-import WorkspaceFolderController from '../../core/workspaceFolder'
-import { PatternType } from '../../types'
+import WorkspaceFolderController, { PatternType } from '../../core/workspaceFolder'
 import { disposeAll } from '../../util'
+import { CancellationError } from '../../util/errors'
 import workspace from '../../workspace'
 import helper from '../helper'
 
@@ -16,10 +17,10 @@ let disposables: Disposable[] = []
 let nvim: Neovim
 
 function updateConfiguration(key: string, value: any, defaults: any): void {
-  configurations.updateUserConfig({ [key]: value })
+  configurations.updateMemoryConfig({ [key]: value })
   disposables.push({
     dispose: () => {
-      configurations.updateUserConfig({ [key]: defaults })
+      configurations.updateMemoryConfig({ [key]: defaults })
     }
   })
 }
@@ -28,10 +29,7 @@ beforeAll(async () => {
   await helper.setup()
   nvim = helper.nvim
   let userConfigFile = path.join(process.env.COC_VIMCONFIG, 'coc-settings.json')
-  configurations = new Configurations(userConfigFile, {
-    $removeConfigurationOption: () => {},
-    $updateConfigurationOption: () => {}
-  })
+  configurations = new Configurations(userConfigFile, undefined)
   workspaceFolder = new WorkspaceFolderController(configurations)
 })
 
@@ -130,19 +128,17 @@ describe('WorkspaceFolderController', () => {
       expect(res).toEqual(['foo'])
     })
 
-    it('should get patterns from languageserver', async () => {
-      updateConfiguration('languageserver', {
+    it('should add patterns from languageserver', () => {
+      workspaceFolder.addServerRootPatterns({
         test: {
           filetypes: ['vim'],
           rootPatterns: ['bar']
         }
-      }, {})
+      })
       workspaceFolder.addRootPattern('vim', ['foo'])
-      await nvim.command('edit t.vim')
-      await nvim.command('setf vim')
-      let doc = await workspace.document
-      let res = workspaceFolder.getRootPatterns(doc, PatternType.LanguageServer)
-      expect(res).toEqual(['bar', 'foo'])
+      let res = workspaceFolder.getServerRootPatterns('vim')
+      expect(res.includes('foo')).toBe(true)
+      expect(res.includes('bar')).toBe(true)
     })
 
     it('should get patterns from user configuration', async () => {
@@ -159,16 +155,24 @@ describe('WorkspaceFolderController', () => {
     }
 
     it('should resolve to cwd for file in cwd', async () => {
-      updateConfiguration('coc.preferences.rootPatterns', [], ['.git', '.hg', '.projections.json'])
+      updateConfiguration('workspace.rootPatterns', [], ['.git', '.hg', '.projections.json'])
       let file = path.join(os.tmpdir(), 'foo')
-      await nvim.command(`edit ${file}`)
-      let doc = await workspace.document
+      let doc = await helper.createDocument(file)
       let res = workspaceFolder.resolveRoot(doc, os.tmpdir(), false, expand)
       expect(res).toBe(os.tmpdir())
     })
 
+    it('should ignore cwd by ignore pattern', async () => {
+      updateConfiguration('workspace.rootPatterns', [], ['.git', '.hg', '.projections.json'])
+      updateConfiguration('workspace.ignoredFolders', ['**/*'], ['$HOME'])
+      let file = path.join(os.tmpdir(), 'foo')
+      let doc = await helper.createDocument(file)
+      let res = workspaceFolder.resolveRoot(doc, os.tmpdir(), false, expand)
+      expect(res).toBeNull()
+    })
+
     it('should not fallback to cwd as workspace folder', async () => {
-      updateConfiguration('coc.preferences.rootPatterns', [], ['.git', '.hg', '.projections.json'])
+      updateConfiguration('workspace.rootPatterns', [], ['.git', '.hg', '.projections.json'])
       updateConfiguration('workspace.workspaceFolderFallbackCwd', false, true)
       let file = path.join(os.tmpdir(), 'foo')
       await nvim.command(`edit ${file}`)
@@ -221,6 +225,33 @@ describe('WorkspaceFolderController', () => {
       let res = workspaceFolder.resolveRoot(doc, path.join(os.homedir(), 'foo'), true, expand)
       expect(res).toBe(null)
     })
+
+    it('should respect specific filetype for bottomUpFileTypes', async () => {
+      updateConfiguration('workspace.rootPatterns', ['.vim'], ['.git', '.hg', '.projections.json'])
+      updateConfiguration('workspace.bottomUpFiletypes', ['vim'], [])
+      let root = path.join(os.tmpdir(), 'a')
+      let dir = path.join(root, '.vim')
+      fs.mkdirSync(dir, { recursive: true })
+      let file = path.join(dir, 'foo.vim')
+      await nvim.command(`edit ${file}`)
+      let doc = await workspace.document
+      expect(doc.filetype).toBe('vim')
+      let res = workspaceFolder.resolveRoot(doc, file, true, expand)
+      expect(res).toBe(root)
+    })
+
+    it('should respect wildcard', async () => {
+      updateConfiguration('workspace.rootPatterns', ['.vim'], ['.git', '.hg', '.projections.json'])
+      updateConfiguration('workspace.bottomUpFiletypes', ['*'], [])
+      let root = path.join(os.tmpdir(), 'a')
+      let dir = path.join(root, '.vim')
+      fs.mkdirSync(dir, { recursive: true })
+      let file = path.join(dir, 'foo')
+      await nvim.command(`edit ${file}`)
+      let doc = await workspace.document
+      let res = workspaceFolder.resolveRoot(doc, file, true, expand)
+      expect(res).toBe(root)
+    })
   })
 
   describe('renameWorkspaceFolder()', () => {
@@ -250,6 +281,35 @@ describe('WorkspaceFolderController', () => {
       workspaceFolder.removeWorkspaceFolder('/a/b')
       expect(e.removed.length).toBe(1)
       expect(e.added.length).toBe(0)
+    })
+  })
+
+  describe('checkPatterns()', () => {
+    it('should check if pattern exists', async () => {
+      expect(await workspaceFolder.checkPatterns([], ['p'])).toBe(false)
+      let folder: WorkspaceFolder = { name: '', uri: URI.file(process.cwd()).toString() }
+      let res = await workspaceFolder.checkPatterns([folder], ['package.json', '**/not_exists'])
+      expect(res).toBe(true)
+      res = await workspaceFolder.checkPatterns([folder], ['**/not_exists'])
+      expect(res).toBe(false)
+    })
+
+    it('should not throw on timeout', async () => {
+      let spy = jest.spyOn(workspaceFolder, 'checkFolder').mockImplementation((_dir, _patterns, token) => {
+        return new Promise((resolve, reject) => {
+          let timer = setTimeout(() => {
+            resolve(undefined)
+          }, 200)
+          token.onCancellationRequested(() => {
+            clearTimeout(timer)
+            reject(new CancellationError())
+          })
+        })
+      })
+      let folder: WorkspaceFolder = { name: '', uri: URI.file(process.cwd()).toString() }
+      let res = await workspaceFolder.checkPatterns([folder], ['**/schema.json'])
+      spy.mockRestore()
+      expect(res).toBe(false)
     })
   })
 })

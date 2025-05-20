@@ -3,3 +3,4 @@
 *.swp
 /homelander/_home/.config/coc/
 /homelander/.bashrc/0-*
+/homelander/_home/.vim/pack/datfinesoul/start/coc.nvim/package-lock.json
