@@ -30,10 +30,6 @@ When asked to enter a "Title for your SSH key", please add something meaningful 
 
 ! First copy your one-time code: 46C9-00D4
 Press Enter to open github.com in your browser...
-Gtk-Message: 14:07:47.290: Failed to load module "canberra-gtk-module"
-Gtk-Message: 14:07:47.291: Failed to load module "canberra-gtk-module"
-[0806/140747.336375:WARNING:chrome_main_linux.cc(80)] Read channel stable from /app/extra/CHROME_VERSION_EXTRA
-[0806/140747.469930:WARNING:chrome_main_linux.cc(80)] Read channel stable from /app/extra/CHROME_VERSION_EXTRA
 Opening in existing browser session.
 ✓ Authentication complete.
 - gh config set -h github.com git_protocol ssh
