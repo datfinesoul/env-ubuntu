@@ -1,4 +1,0 @@
-#!/bin/bash
-git clone https://github.com/datfinesoul/env-ubuntu.git /home/ubuntu/env-ubuntu
-chown -R ubuntu:ubuntu /home/ubuntu/env-ubuntu
-sudo -Hu ubuntu bash -c "cd && cd env-ubuntu && ./bootstrap.bash"
