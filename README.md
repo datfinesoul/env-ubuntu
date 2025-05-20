@@ -1,3 +1,5 @@
+<!-- trunk-ignore-all(prettier) -->
+<!-- trunk-ignore-all(markdownlint/MD041) -->
 ## Overview
 
 A collections of things to get my terminal up and running in a fairly consistent state
@@ -9,7 +11,7 @@ A collections of things to get my terminal up and running in a fairly consistent
 ```bash
 git clone https://github.com/datfinesoul/env-ubuntu.git
 cd env-ubuntu
-./bootstrap.new.bash
+./bootstrap.bash
 ```
 
 ## `gh` CLI
@@ -20,7 +22,7 @@ gh auth login
 
 When asked to enter a "Title for your SSH key", please add something meaningful after the default of `GitHub CLI`
 
-```
+```text
 ? What account do you want to log into? GitHub.com
 ? What is your preferred protocol for Git operations on this host? SSH
 ? Generate a new SSH key to add to your GitHub account? Yes
@@ -42,6 +44,7 @@ Opening in existing browser session.
 
 ### Apple Keyboard
 
+<!-- trunk-ignore(markdownlint/MD034) -->
 - https://www.hashbangcode.com/article/turning-or-fn-mode-ubuntu-linux
 
 | Value | Function | Description |
