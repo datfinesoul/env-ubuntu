@@ -23,54 +23,72 @@
 	renameLimit = 5000
 	conflictStyle = diff3
 [alias]
+	; Show branches that contain a specific commit
 	bc = branch --contains
+	; Create and checkout a new branch without tracking remote
 	cb = checkout --no-track -b
-	cleanup = "!sh -c 'git rm $(git ls-files —deleted)'"
-	cob = "!bash -c 'git checkout $(git branch -a | awk '\"'\"'{FS=\"[/]\";} {gsub(/remotes\\/[^\\/]+\\//, \"\"); gsub(/[\t *]/, \"\"); if ($0 !~ /HEAD/) {print $1;} }'\"'\"' | sort -ui | percol --match-method regex)'"
+	; Remove deleted files from the index
+	cleanup = "!git ls-files --deleted -z | xargs -0 git rm"
+	; Compare commits between current branch and specified branch
 	cmp = "!sh -c 'git log --left-right --oneline --no-merges --pretty=format:\"%m %Cred%h%Creset - %s %Cgreen(%an - %cr)%Creset %C(yellow)%d%Creset\" $0...'"
-	crs = clone --recurse-submodules
-	;d = diff --ignore-space-at-eol --ignore-space-change
+	; Show diff (basic version)
 	d = diff
-	;dc = diff --cached --ignore-space-at-eol --ignore-space-change
+	; Show diff of staged changes
 	dc = diff --cached
+	; Show diff with side-by-side view using delta
 	ds = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff'"
+	; Show staged diff with side-by-side view using delta
 	dsc = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached'"
+	; Show diff stats for staged changes
 	dnc = diff --cached --stat
+	; Show diff stats for unstaged changes
 	dn = diff --stat
+	; Show merge commits with formatting
 	f=log --oneline --merges --pretty=format:'%Cred%h%Creset - %C(white)%s %Cgreen(%cr)%C(blue) [%cn]%C(yellow)%d%Creset' --abbrev-commit
+	; Fetch all remotes and tags
 	fa = fetch --all --tags
-	lb = checkout -
+	; Show log with short date format
 	lds = log --pretty=format:"%C(yellow)%h\\ %ad%Cred%d\\ %Creset%s%Cblue\\ [%cn]" --decorate --date=short
+	; Show pretty log graph with colors
 	lg = log --graph --date-order --pretty=format:'%Cred%h%Creset - %C(white)%s\n%C(red ul)          %Cgreen(%cr) %C(cyan)[%an,%cn]%Creset %C(yellow)%d%Creset'
+	; Show pretty log graph for all branches
 	lga = log --graph --date-order --all --pretty=format:'%Cred%h%Creset - %C(white)%s\n%C(red ul)          %Cgreen(%cr) %C(cyan)[%an,%cn]%Creset %C(yellow)%d%Creset'
+	; Show log with file names and detailed commit info
 	lgn = log --no-merges --name-status --pretty=format:'%C(white)%m %Cred%h %Creset- %C(white)%s\n           %C(yellow)%d%n  %Cgreen%ci - %an,%cn - %Cresetparent: %Cred%p%Creset'
+	; Merge without fast-forward and without committing
 	m = merge --no-ff --no-commit
+	; Pull without fast-forward and without committing
 	p = pull --no-ff --no-commit
+	; Commit (shorthand)
 	cs = commit
+	; Show merge log with graph
 	mergelog = log --oneline --decorate --graph
+	; Show status with untracked files and short format
 	s = status -uall -s -b
-	ss = submodule status --recursive
-	su = submodule update --recursive
+	; View previous releases by looking at tags
 	viewprevrel = "!sh -c 'git mergelog | grep \"tag: \" | head'"
-	# diff vs. origin for same branch
-	vs = "!bash -c 'X=\"${0/bash/}\"; git d origin/${X:-$(git rev-parse --abbrev-ref HEAD)}..'"
-	vsn = "!bash -c 'X=\"${0/bash/}\"; git d --name-only origin/${X:-$(git rev-parse --abbrev-ref HEAD)}..'"
+	; Show word-level diff ignoring whitespace
 	wiff = diff --ignore-space-at-eol --ignore-space-change --word-diff
+	; Show word-level diff of staged changes ignoring whitespace
 	wiffc = diff --ignore-space-at-eol --ignore-space-change --word-diff --cached
-	# git sba <repository uri> <destination folder>
-	# git sba https://bitbucket.org/vim-plugins-mirror/vim-surround.git .vim/bundle/tpope-vim-surround
-	# the acronym stands for "subtree add"
-	sba = "!f() { git subtree add --prefix $2 $1 master --squash; }; f"
-	# the acronym stands for "subtree update"
-	sbu = "!f() { git subtree pull --prefix $2 $1 master --squash; }; f"
-	# find all remote branches already in master
+	; Add subtree from repository, auto-detecting default branch (usage: git sba <repo-uri> <destination-folder>)
+	sba = "!f() { default_branch=$(git ls-remote --symref $1 HEAD | head -1 | cut -d'/' -f3 | cut -d$'\t' -f1); git subtree add --prefix $2 $1 ${default_branch:-main} --squash; }; f"
+	; Update subtree from repository, auto-detecting default branch (usage: git sbu <repo-uri> <destination-folder>)
+	sbu = "!f() { default_branch=$(git ls-remote --symref $1 HEAD | head -1 | cut -d'/' -f3 | cut -d$'\t' -f1); git subtree pull --prefix $2 $1 ${default_branch:-main} --squash; }; f"
+	; Show remote branches already merged into master
 	merged = branch -r --merged
+	; Rebase preserving commit dates
 	rebase-preserve = rebase --committer-date-is-author-date
+	; Show your own commits with file names
 	own = "!git lg --name-only --author=\"$(git config user.name)\""
+	; Show contributor statistics
 	sl = shortlog --summary --numbered --email --all
-	# git de origin/master package-lock.json docs
+	; Show diff excluding specified paths (usage: git de <branch> <path1> <path2>...)
 	de = "!sh -c 'branch=\"$1\"; shift; paths=(); for arg do paths+=(\":(exclude)$arg\"); done; git diff \"$branch\" -- . \"${paths[@]}\"' -"
+	; Create empty commit to trigger CI checks
 	empty = commit -m trigger-checks --allow-empty
+	; View previous releases by looking at tags
+	viewprevrel = "!sh -c 'git mergelog | grep \"tag: \" | head'"
 
 [color]
 	status = auto
