@@ -46,6 +46,7 @@ ccode () {
 
 	# Set up environment variables
 	export CLAUDE_CODE_USE_BEDROCK=1
+	export CLAUDE_CODE_MAX_OUTPUT_TOKENS=10240
 	unset DISABLE_PROMPT_CACHING
 	unset AWS_PROFILE
 
@@ -57,5 +58,5 @@ ccode () {
 	>&2 echo "  AWS Region: us-west-2"
 	>&2 echo ""
 
-	claude
+	claude --resume
 }
