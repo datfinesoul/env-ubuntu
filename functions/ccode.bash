@@ -24,6 +24,7 @@ ccode () {
 	if [[ -f "$models_file" ]]; then
 		find "$(dirname "$models_file")" \
 			-name "$(basename "$models_file")" \
+			-maxdepth 1 \
 			-mtime +1 -delete 2>/dev/null
 		if [[ ! -f "$models_file" ]]; then
 			>&2 echo "[!] Deleted older $models_file cache"
@@ -74,7 +75,8 @@ ccode () {
 	fi
 	if docker images mcp/aws-documentation:latest &> /dev/null; then
 		claude mcp add aws-docs -- docker run \
-			--rm --interactive \
+			--rm \
+			--interactive \
 			--env FASTMCP_LOG_LEVEL=ERROR \
 			--env AWS_DOCUMENTATION_PARTITION=aws \
 			mcp/aws-documentation:latest
