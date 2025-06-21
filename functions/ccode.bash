@@ -73,13 +73,12 @@ ccode () {
 	else
 		claude mcp add opentofu -- npx @opentofu/opentofu-mcp-server
 	fi
-	if docker images mcp/aws-documentation:latest &> /dev/null; then
-		claude mcp add aws-docs -- docker run \
-			--rm \
-			--interactive \
-			--env FASTMCP_LOG_LEVEL=ERROR \
-			--env AWS_DOCUMENTATION_PARTITION=aws \
-			mcp/aws-documentation:latest
-	fi
+	docker pull mcp/aws-documentation:latest
+	claude mcp add aws-docs -- docker run \
+		--rm \
+		--interactive \
+		--env FASTMCP_LOG_LEVEL=ERROR \
+		--env AWS_DOCUMENTATION_PARTITION=aws \
+		mcp/aws-documentation:latest
 	claude "$@"
 }
