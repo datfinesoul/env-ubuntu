@@ -94,3 +94,8 @@ alias nocolor='TERM=dumb script --command /bin/bash -q /dev/null'
 alias shellcheck='shellcheck --check-sourced --external-sources'
 #alias tf='terraform'
 alias pn=pnpm
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+	alias meld='/Applications/Meld.app/Contents/MacOS/Meld'
+fi
+

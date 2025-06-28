@@ -33,12 +33,16 @@
 	cmp = "!sh -c 'git log --left-right --oneline --no-merges --pretty=format:\"%m %Cred%h%Creset - %s %Cgreen(%an - %cr)%Creset %C(yellow)%d%Creset\" $0...'"
 	; Show diff (basic version)
 	d = diff
+	dd = diff --diff-filter=d
 	; Show diff of staged changes
 	dc = diff --cached
+	ddc = diff --cached --diff-filter=d
 	; Show diff with side-by-side view using delta
 	ds = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff'"
+	dds = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --diff-filter=d'"
 	; Show staged diff with side-by-side view using delta
 	dsc = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached'"
+	ddsc = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached --diff-filter=d'"
 	; Show diff stats for staged changes
 	dnc = diff --cached --stat
 	; Show diff stats for unstaged changes
