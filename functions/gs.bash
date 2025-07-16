@@ -10,7 +10,15 @@ gs() {
 	# Parse current repo-relative path into array
 	# Example: if current path is project/src/utils, then dirs=["project","src","utils"]
 	local -a dirs
-	IFS=/ read -r -a dirs <<< "$(git rev-parse --show-prefix)"
+
+	# OSX BSD fix
+	local prefix
+	prefix="$(git rev-parse --show-prefix)"
+	prefix=${prefix%/}
+	IFS='/'
+	dirs=($prefix)
+	unset IFS
+	#IFS=/ read -r -a dirs <<< "$(git rev-parse --show-prefix)"
 
 	local gs_path index
 	local command="${1:-}"
@@ -18,6 +26,7 @@ gs() {
 	local found_dirs=0
 	declare -A gs_dir_commands
 	declare -A cmd_descriptions
+	declare -A seen_commands
 	local -a dir_order
 
 	# Check for jq availability
@@ -32,8 +41,6 @@ gs() {
 		is_mac=1
 	fi
 
-	# Commands are shadowed by closer directories (like PATH resolution)
-	declare -A seen_commands
 
 	# Traversal proceeds from current directory up to repo root
 	# For project/src/utils, checks _gs dirs in this order:
