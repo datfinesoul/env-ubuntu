@@ -89,11 +89,18 @@ ccode () {
 	#  --env AWS_SECRET_ACCESS_KEY \
 	#  --env AWS_SESSION_TOKEN \
 	#  awslabs/cost-analysis-mcp-server:latest
-	claude mcp add aws-diagram -- docker run \
-		--rm \
-		--interactive \
-		--env FASTMCP_LOG_LEVEL=ERROR \
-		--env AWS_DOCUMENTATION_PARTITION=aws \
-		mcp/aws-diagram:latest
+	#claude mcp add aws-diagram -- docker run \
+	#  --rm \
+	#  --interactive \
+	#  --env FASTMCP_LOG_LEVEL=ERROR \
+	#  --env AWS_DOCUMENTATION_PARTITION=aws \
+	#  mcp/aws-diagram:latest
+
+	claude mcp add bookmark-manager -- docker run \
+			--rm \
+			--interactive \
+			--volume ~/.bookmark-manager:/app/.data \
+			bookmark-manager:latest
+
 	claude "$@"
 }
