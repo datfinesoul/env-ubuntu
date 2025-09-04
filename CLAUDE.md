@@ -64,3 +64,14 @@ Individual installers in `installers/` directory can be run manually:
 ### Error Handling
 
 All scripts follow bash strict mode (`set -o errexit -o nounset -o pipefail -o errtrace`) and include comprehensive error trapping with cleanup functions.
+
+## Git Workflow Rules
+
+**⚠️ CRITICAL: Never automatically add or commit pending changes in a branch unless specifically asked to do so by the user.**
+
+This rule applies to:
+- Creating pull requests
+- Committing changes  
+- Any git operations involving staging files
+
+Always check what files have pending changes and ask the user explicitly before adding them to staging area.
