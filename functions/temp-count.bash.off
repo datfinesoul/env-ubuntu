@@ -1,0 +1,59 @@
+#!/bin/bash
+# csv_count.sh - Count occurrences by any number of columns from CSV
+
+exit 0
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <file.csv> <column1> [column2] [column3] ..."
+    exit 1
+fi
+
+file="$1"
+shift
+columns=("$@")
+
+# Build the column list for Python
+col_list=""
+for col in "${columns[@]}"; do
+    col_list="$col_list'$col',"
+done
+col_list=${col_list%,}  # Remove trailing comma
+
+python3 -c "
+import csv
+import sys
+from collections import Counter
+
+filename = '$file'
+target_columns = [$col_list]
+
+try:
+    with open(filename, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+
+        # Check if columns exist
+        fieldnames = reader.fieldnames
+        missing_cols = [col for col in target_columns if col not in fieldnames]
+        if missing_cols:
+            print('Error: Columns not found:', missing_cols, file=sys.stderr)
+            sys.exit(1)
+
+        # Count combinations
+        combinations = []
+        for row in reader:
+            combo = tuple(row[col] if row[col] else 'EMPTY' for col in target_columns)
+            combinations.append(combo)
+
+        counter = Counter(combinations)
+
+        # Print header
+        print(','.join(target_columns + ['count']))
+
+        # Print results
+        for combo, count in counter.most_common():
+            print(','.join(list(combo) + [str(count)]))
+
+except Exception as e:
+    print('Error:', e, file=sys.stderr)
+    sys.exit(1)
+"

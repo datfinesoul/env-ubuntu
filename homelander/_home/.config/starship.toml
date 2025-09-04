@@ -71,3 +71,7 @@ truncate_to_repo = false
 style= 'yellow'
 truncation_length = 8
 truncation_symbol = '.../'
+
+[character]
+success_symbol = '[#](bold green)'
+error_symbol = '[#](bold red)'
