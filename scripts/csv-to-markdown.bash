@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 alias csv-to-markdown=csv_to_markdown
 # Function to convert CSV to Markdown Table
 csv_to_markdown() {
@@ -15,3 +17,6 @@ csv_to_markdown() {
         echo "$line" | awk -F, '{ gsub(/"\\""/, "", $0); printf "|"; for (i=1; i<=NF; i++) printf " %s |", $i; print ""; }'
     done
 }
+
+# Call the function with all arguments
+csv_to_markdown "$@"

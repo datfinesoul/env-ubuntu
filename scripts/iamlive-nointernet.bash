@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 alias iamlive-nointernet=iamlive_nointernet
 iamlive_nointernet () {
 if [[ "${1:-}" == "--proxy" ]]; then
@@ -15,3 +17,6 @@ else
 	sudo -g no-internet "$(which iamlive)"
 fi
 }
+
+# Call the function with all arguments
+iamlive_nointernet "$@"

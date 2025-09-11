@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 alias git-branch-clean=git_branch_clean
 alias git-branch-clean-squashed=git_branch_clean_squashed
 
@@ -29,3 +31,6 @@ git_branch_clean_squashed () {
 	>&2 echo "git-branch-clean-squashed ${BRANCH} | xargs -I{} -n1 git branch -D {}"
 	>&2 echo "git fetch --all && git branch -vv | awk '/: gone]/{print \$1}' | xargs -r git branch -D"
 }
+
+# Call the function with all arguments
+git_branch_clean "$@"

@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 alias git-track=git_track
 git_track () {
 	local BRANCH
@@ -9,3 +11,6 @@ git_track () {
 		>&2 echo "missing branch"
 	fi
 }
+
+# Call the function with all arguments
+git_track "$@"

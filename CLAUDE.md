@@ -75,3 +75,7 @@ This rule applies to:
 - Any git operations involving staging files
 
 Always check what files have pending changes and ask the user explicitly before adding them to staging area.
+
+## Directory-Specific Documentation
+
+**IMPORTANT:** Some subdirectories contain their own CLAUDE.md files with specialized guidance for working within those specific areas. Always check for and read any CLAUDE.md files in subdirectories when working on code in those locations.

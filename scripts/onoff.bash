@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 onoff () {
 	local filename="$1"
 	local base="${filename%.*}"
@@ -12,3 +14,6 @@ onoff () {
 		mv "$filename" "$new_filename"
 	fi
 }
+
+# Call the function with all arguments
+onoff "$@"

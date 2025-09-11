@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 ipv6 () {
 	local setting
 	[[ "$1" == "off" ]] && setting="1" || setting="0"
@@ -9,3 +11,6 @@ ipv6 () {
 
 	ip a
 }
+
+# Call the function with all arguments
+ipv6 "$@"

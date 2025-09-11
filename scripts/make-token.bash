@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 alias make-token=make_token
 make_token () {
 	local length
@@ -7,3 +9,6 @@ make_token () {
 	fi
 	python3 -c "import secrets; print(secrets.token_hex($length), end='')"
 }
+
+# Call the function with all arguments
+make_token "$@"

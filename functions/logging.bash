@@ -22,3 +22,4 @@ log_debug() { log_custom "[${log_gray}D${log_reset}]${log_gray} " "${log_reset}"
 log_pass() { log_custom "[${log_green}✔${log_reset}]${log_green} " "${log_reset}" "$@"; }
 log_warn() { log_custom "[${log_magenta}!${log_reset}]${log_magenta} " "${log_reset}" "$@"; }
 log_fail() { log_custom "[${log_red}✘${log_reset}]${log_red} " "${log_reset}" "$@"; }
+

@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 alias random-string=random_string
 random_string() {
   if [ $# -lt 1 ]; then
@@ -14,3 +16,6 @@ random_string() {
 	local charset="${2:-a-z0-9}"
   < /dev/urandom tr -dc "$charset" | head -c "$length"
 }
+
+# Call the function with all arguments
+random_string "$@"

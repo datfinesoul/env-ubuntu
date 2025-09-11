@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 alias git-check-access=git_check_access
 git_check_access () {
 	REPO="${1}"
@@ -8,3 +10,6 @@ git_check_access () {
 
 	# TODO: make output return: none, http, ssh, full
 }
+
+# Call the function with all arguments
+git_check_access "$@"

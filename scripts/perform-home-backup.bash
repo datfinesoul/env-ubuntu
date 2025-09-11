@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 alias perform-home-backup=perform_home_backup
 perform_home_backup() {
 	local backup_destination="$1"
@@ -47,3 +49,6 @@ perform_home_backup() {
 		"$home_directory/" \
 		"$backup_destination"
 }
+
+# Call the function with all arguments
+perform_home_backup "$@"

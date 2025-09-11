@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 epoch() {
 	local seconds
 	if [[ "$1" == '--help' ]]; then
@@ -19,3 +21,6 @@ epoch() {
 		|| date --date="@${seconds}" "$@" 2> /dev/null \
 		|| return 1
 }
+
+# Call the function with all arguments
+epoch "$@"

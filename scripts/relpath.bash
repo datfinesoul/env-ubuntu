@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 relpath () {
   local POS REF DOWN
   POS="${1%%/}"
@@ -17,3 +19,6 @@ relpath () {
 
   echo "${DOWN}${REF##${POS}/}"
 }
+
+# Call the function with all arguments
+relpath "$@"
