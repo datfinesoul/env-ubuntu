@@ -74,6 +74,29 @@ if [[ -n "${DEBUG_ENV:-}" ]]; then
   info "$(content script_dir)"
 fi
 
+# The traps here are used if nothing overrides them
+
+_core_error_handler() {
+	local exit_code=$?
+	local line_number=$1
+	fail "Error on line ${line_number}: Command exited with status ${exit_code}"
+	fail "Call stack:"
+	local frame=1
+	while caller $frame; do
+		((frame++))
+	done
+	return $exit_code
+}
+trap '_core_error_handler $LINENO' ERR
+
+_core_cleanup() {
+	local exit_code=$?
+	if [[ $exit_code -ne 0 ]]; then
+		fail "Script ${script_name} failed with exit code: $exit_code"
+	fi
+}
+trap '_core_cleanup' EXIT
+
 set -o errexit
 set -o nounset
 set -o pipefail
