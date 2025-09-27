@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/_core.bash"
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+	>&2 echo 'No Darwin Install'
+else
+
+	### MODIFY: START
+	repo='lunatask/lunatask'
+	pattern="${kernel_name}_${architecture}.tar.gz$"
+	pattern="[.]AppImage$"
+	### MODIFY: END
+
+	releases="$( \
+		curl -s "https://api.github.com/repos/${repo}/releases/latest" \
+		)"
+
+	read -r version url <<< "$(
+		printf "%s\n" "${releases}" \
+		| jq \
+		--arg pattern "$pattern" \
+		-r '[.tag_name, (.assets[].browser_download_url | select(test($pattern)))] | @tsv'
+	)"
+
+	debug "version:${version}"
+	debug "url:${url}"
+
+	if [[ -z "${url}" ]]; then
+		fail "unable to find match, displaying all files for debugging"
+		printf "%s\n" "${releases}" \
+			| jq -r '[.tag_name, (.assets[].browser_download_url)]'
+		exit 1
+	fi
+
+	#downloaded_file="${url##*/}"
+	executable="${repo##*/}"
+	versioned_exe="${executable}_${version}"
+
+	#debug "downloaded_file:${downloaded_file}"
+	debug "executable:${executable}"
+	debug "versioned_exe:${versioned_exe}"
+
+	curl -L -o "$executable" "$url"
+	chmod 755 "$executable"
+
+	target_dir="${HOME}/.local/${executable}"
+	bin_dir="${HOME}/.local/bin"
+
+	mkdir -p "${target_dir}"
+	mkdir -p "${bin_dir}"
+
+	#tar xzf "${downloaded_file}"
+	#tar xf "${downloaded_file}"
+	#unzip "${downloaded_file}"
+	#mv "${executable}_${kernel_name,,}_${architecture}" "${executable}"
+
+	mv "${executable}" "${target_dir}/${versioned_exe}"
+
+	#if [[ "${kernel_name}" == "Darwin" ]]; then
+	#  ln -sf "${target_dir}/${versioned_exe}" "${bin_dir}/${executable}"
+	#else
+	#  ln --symbolic --force "${target_dir}/${versioned_exe}" "${bin_dir}/${executable}"
+	#fi
+
+	# AppImage stuff
+	cat > "${bin_dir}/${executable}" <<-DOC
+	#!/bin/bash
+	exec "${target_dir}/${versioned_exe}" --no-sandbox "\$@"
+	DOC
+	chmod 755 "${bin_dir}/${executable}"
+
+	# Create desktop entry
+	cat > "$HOME/.local/share/applications/lunatask.desktop" <<-DOC
+	[Desktop Entry]
+	Name=LunaTask
+	Comment=Task Management Application
+	Exec=${bin_dir}/${executable}
+	Icon=${bin_dir}/${executable}
+	Terminal=false
+	Type=Application
+	Categories=Office;ProjectManagement;
+	StartupWMClass=LunaTask
+	DOC
+
+	update-desktop-database "$HOME/.local/share/applications"
+fi
+
+# vim: set ft=bash :

@@ -46,6 +46,9 @@ perform_home_backup() {
 		--exclude='Library/WebKit/WebKitCache/' \
 		--exclude='node_modules/' \
 		--exclude='snap/' \
+		--exclude='.config/Jan/' \
+		--exclude='.config/Slack/' \
+		--exclude='.lmstudio/' \
 		"$home_directory/" \
 		"$backup_destination"
 }
