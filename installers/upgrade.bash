@@ -16,22 +16,23 @@ if [[ ! -d "${cache_dir}" ]]; then
 	exit 1
 fi
 
-# Find all .done files in cache (bash 3.2+ compatible)
+# Find all .done files older than 1 week (bash 3.2+ compatible)
 done_files=()
 while IFS= read -r file; do
 	done_files+=("${file}")
-done < <(find "${cache_dir}" -type f -name "*.done" -exec basename {} \; | sort)
+done < <(find "${cache_dir}" -type f -name "*.done" -mtime +7 -exec basename {} \; | sort)
 
 if [[ "${#done_files[@]}" -eq 0 ]]; then
 	info "No installations found in cache"
 	exit 0
 fi
 
-info "Found ${#done_files[@]} installed packages to upgrade"
+info "Found ${#done_files[@]} installed packages to upgrade:"
 plain ""
 
-failed=()
-succeeded=()
+# Build list of installers to run
+installers_to_run=()
+missing_installers=()
 
 for done_file in "${done_files[@]}"; do
 	# Extract the base name without .done extension
@@ -48,10 +49,27 @@ for done_file in "${done_files[@]}"; do
 	fi
 
 	if [[ -z "${installer}" ]]; then
-		warn "No installer found for: ${install_name}"
-		failed+=("${install_name} (no installer found)")
-		continue
+		warn "No installer found: ${install_name}"
+		missing_installers+=("${install_name}")
+	else
+		plain "  - ${install_name}"
+		installers_to_run+=("${install_name}|${installer}")
 	fi
+done
+
+plain ""
+yesno "Start upgrade?"
+if [[ "${yn}" != "yes" ]]; then
+	info "Upgrade cancelled"
+	exit 0
+fi
+plain ""
+
+failed=()
+succeeded=()
+
+for item in "${installers_to_run[@]}"; do
+	IFS='|' read -r install_name installer <<< "${item}"
 
 	info "Upgrading: ${install_name}"
 	if "${installer}" --force; then
@@ -59,8 +77,12 @@ for done_file in "${done_files[@]}"; do
 	else
 		failed+=("${install_name}")
 	fi
-	break
 	plain ""
+done
+
+# Add missing installers to failed list
+for install_name in "${missing_installers[@]}"; do
+	failed+=("${install_name} (no installer found)")
 done
 
 plain "============================================"
