@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# shellcheck disable=SC1090
-source "$(dirname "$(readlink -e -- "$0")")/core.source"
-
-curl 'https://rclone.org/install.sh' | sudo bash

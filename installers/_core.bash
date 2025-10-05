@@ -1,34 +1,6 @@
 #!/usr/bin/env bash
-red="$(tput setaf 1)"
-green="$(tput setaf 2)"
-yellow="$(tput setaf 3)"
-cyan="$(tput setaf 6)"
-white="$(tput setaf 7)"
-gray="$(tput dim)$(tput setaf 7)"
-magenta="$(tput setaf 5)"
-reset="$(tput sgr0)"
-custom_log() {
-	local prefix="$1"
-	local postfix="$2"
-	shift 2
-	if [[ -p /dev/stdin && "$#" -eq 0 ]]; then
-		while IFS= read -r line || [ -n "$line" ]; do
-			>&2 echo -e "${prefix}${line}${postfix}"
-		done
-	else
-		>&2 echo -e "${prefix}$*${postfix}"
-	fi
-}
-plain() { custom_log "" "" "$@"; }
-info() { custom_log "[i] " "" "$@"; }
-debug() { custom_log "[${gray}D${reset}]${gray} " "${reset}" "$@"; }
-pass() { custom_log "[${green}✔${reset}]${green} " "${reset}" "$@"; }
-warn() { custom_log "[${magenta}!${reset}]${magenta} " "${reset}" "$@"; }
-fail() { custom_log "[${red}✘${reset}]${red} " "${reset}" "$@"; }
-yesno () {
-	info "$@"
-	>&2 read -r -p "[?] [yes/no]: " yn
-}
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/_logging.bash"
 
 # Sourced scripts, can use 'return'. In order to not exit the sourced script
 #   the 'return test' happens in a subshell
@@ -39,15 +11,15 @@ if [[ "${sourced}" -eq 0 ]]; then
 fi
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  function readlink {
-    greadlink "$@"
-  }
-  export -f readlink
+	function readlink {
+		greadlink "$@"
+	}
+	export -f readlink
 
-  function sed {
-    gsed "$@"
-  }
-  export -f sed
+	function sed {
+		gsed "$@"
+	}
+	export -f sed
 fi
 
 kernel_name="$(uname -s)" # Darwin/Linux

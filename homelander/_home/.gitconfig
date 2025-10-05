@@ -120,6 +120,9 @@
 	clean = git-lfs clean %f
 	smudge = git-lfs smudge %f
 	required = true
+[include]
+	path = ~/.gitconfig.local
+
 [user]
 	name = Philip Hadviger
 	email = 613305+datfinesoul@users.noreply.github.com
@@ -134,6 +137,7 @@
 [commit]
 	gpgsign = true
 	verbose = true
+	template = /home/datfinesoul/.gitmessage
 ;[url "https://git@"]
 ;  insteadOf = git://
 [rerere]

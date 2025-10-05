@@ -1,0 +1,24 @@
+{
+  "cleanupPeriodDays": 7,
+  "includeCoAuthoredBy": false,
+  "model": "claude-sonnet-4-5-20250929",
+  "alwaysThinkingEnabled": false,
+    "permissions": {
+    "allow": [
+      "Bash(git diff:*)",
+      "Bash(npm run test:*)",
+      "Read(~/.zshrc)"
+    ],
+    "ask": [
+      "Bash(git commit:*)"
+    ],
+    "deny": [
+      "Bash(curl:*)",
+      "Bash(git push:*)",
+      "Bash(git rebase:*)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+
+    ]
+  }
+}
