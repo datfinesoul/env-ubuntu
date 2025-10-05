@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/_logging.bash"
 
 set -o errexit
 set -o nounset
@@ -10,7 +12,7 @@ script_dir="$(dirname "${script_path}")"
 cache_dir="${script_dir}/cache"
 
 if [[ ! -d "${cache_dir}" ]]; then
-	echo "Cache directory not found: ${cache_dir}"
+	fail "Cache directory not found: ${cache_dir}"
 	exit 1
 fi
 
@@ -21,12 +23,12 @@ while IFS= read -r file; do
 done < <(find "${cache_dir}" -type f -name "*.done" -exec basename {} \; | sort)
 
 if [[ "${#done_files[@]}" -eq 0 ]]; then
-	echo "No installations found in cache"
+	info "No installations found in cache"
 	exit 0
 fi
 
-echo "Found ${#done_files[@]} installed packages to upgrade"
-echo
+info "Found ${#done_files[@]} installed packages to upgrade"
+plain ""
 
 failed=()
 succeeded=()
@@ -46,33 +48,34 @@ for done_file in "${done_files[@]}"; do
 	fi
 
 	if [[ -z "${installer}" ]]; then
-		echo "[!] No installer found for: ${install_name}"
+		warn "No installer found for: ${install_name}"
 		failed+=("${install_name} (no installer found)")
 		continue
 	fi
 
-	echo "[→] Upgrading: ${install_name}"
+	info "Upgrading: ${install_name}"
 	if "${installer}" --force; then
 		succeeded+=("${install_name}")
 	else
 		failed+=("${install_name}")
 	fi
-	echo
+	break
+	plain ""
 done
 
-echo "============================================"
-echo "Upgrade Summary"
-echo "============================================"
-echo "Succeeded: ${#succeeded[@]}"
+plain "============================================"
+plain "Upgrade Summary"
+plain "============================================"
+plain "Succeeded: ${#succeeded[@]}"
 for pkg in "${succeeded[@]}"; do
-	echo "  ✔ ${pkg}"
+	pass "${pkg}"
 done
-echo
+plain ""
 
 if [[ "${#failed[@]}" -gt 0 ]]; then
-	echo "Failed: ${#failed[@]}"
+	plain "Failed: ${#failed[@]}"
 	for pkg in "${failed[@]}"; do
-		echo "  ✘ ${pkg}"
+		fail "${pkg}"
 	done
 	exit 1
 fi
