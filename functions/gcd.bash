@@ -57,24 +57,20 @@ _gcd_completions() {
   done
 
 	log_debug "#:${#suggestions[@]}"
-	if [[ "${#suggestions[@]}" -eq -0 ]]; then
+	if [[ "${#suggestions[@]}" -eq 0 ]]; then
 		true
 	elif [[ "${#suggestions[@]}" -eq 1 ]]; then
 		log_debug "s[0]:'${suggestions[0]}'"
 		if [[ "$find_root" == "${suggestions[0]}" ]]; then
-			COMPREPLY="${current_input}/"
+			COMPREPLY=("${current_input}/")
 		elif [[ -z "$current_input" ]]; then
-			COMPREPLY="${current_input}"
+			COMPREPLY=("${current_input}")
 		else
 			COMPREPLY="${difference}${suggestions[0]}"
 		fi
-		log_debug "cr:'${COMPREPLY}'"
+		log_debug "cr:'${COMPREPLY[*]}'"
 	else
-		final=()
-		for path in "${suggestions[@]}"; do
-			final+=("${difference}${path}")
-		done
-		COMPREPLY=("${final[@]}")
+		COMPREPLY=("${suggestions[@]}")
 	fi
 }
 
