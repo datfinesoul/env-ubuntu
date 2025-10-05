@@ -26,7 +26,6 @@ Individual installers in `installers/` directory can be run manually:
 
 **Core Libraries**
 - `_core.bash`: Shared library providing logging functions (`info`, `debug`, `pass`, `warn`, `fail`), system detection, and common utilities
-- `core.source`: Entry point validation and basic setup (cannot be called directly)
 
 **Bootstrap System**
 - `bootstrap.bash`: Main entry point that orchestrates the setup process
@@ -35,7 +34,7 @@ Individual installers in `installers/` directory can be run manually:
 
 **Directory Structure**
 - `installers/`: Contains both automatic (`*.auto.bash`) and manual (`*.manual.bash`) installation scripts
-- `homelander/`: Contains dotfile configurations that get linked to the home directory  
+- `homelander/`: Contains dotfile configurations that get linked to the home directory
 - `bin/`: Utility scripts including Git batch operations and profile management tools
 - `functions/`: Shell function definitions for common operations
 
@@ -43,7 +42,7 @@ Individual installers in `installers/` directory can be run manually:
 
 **Automatic Installers** (run during bootstrap):
 - Core packages (`1_core.auto.bash`)
-- GitHub CLI (`gh.auto.bash`) 
+- GitHub CLI (`gh.auto.bash`)
 - Starship prompt (`starship.auto.bash`)
 - FZF fuzzy finder (`fzf.auto.bash`)
 
@@ -71,7 +70,7 @@ All scripts follow bash strict mode (`set -o errexit -o nounset -o pipefail -o e
 
 This rule applies to:
 - Creating pull requests
-- Committing changes  
+- Committing changes
 - Any git operations involving staging files
 
 Always check what files have pending changes and ask the user explicitly before adding them to staging area.

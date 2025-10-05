@@ -53,7 +53,7 @@ claude_p () {
 			--rm \
 			--interactive \
 			--volume ~/.bookmark-manager:/app/.data \
-			bookmark-manager:latest
+			mindriftfall2infinitepiio/bookmark-manager-mcp:latest
 
 	claude "$@"
 }
