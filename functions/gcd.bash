@@ -20,6 +20,8 @@ _gcd_completions() {
   local repo_root
   repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || return
 
+  compopt -o filenames
+
   local suggestions search relative_path current_input depth find_root difference final
   current_input="${repo_root}/${COMP_WORDS[1]}"
 	log_debug "ci:$current_input"
@@ -52,25 +54,17 @@ _gcd_completions() {
 	log_debug "s:\n$search"
   suggestions=()
   for path in $search; do
-    relative_path="${path#$find_root/}"
+    relative_path="${path#$repo_root/}"
     suggestions+=("$relative_path")
   done
 
 	log_debug "#:${#suggestions[@]}"
 	if [[ "${#suggestions[@]}" -eq 0 ]]; then
 		true
-	elif [[ "${#suggestions[@]}" -eq 1 ]]; then
-		log_debug "s[0]:'${suggestions[0]}'"
-		if [[ "$find_root" == "${suggestions[0]}" ]]; then
-			COMPREPLY=("${current_input}/")
-		elif [[ -z "$current_input" ]]; then
-			COMPREPLY=("${current_input}")
-		else
-			COMPREPLY="${difference}${suggestions[0]}"
-		fi
-		log_debug "cr:'${COMPREPLY[*]}'"
 	else
-		COMPREPLY=("${suggestions[@]}")
+		log_debug "using compgen with current word: '${COMP_WORDS[1]}'"
+		COMPREPLY=($(compgen -W "${suggestions[*]}" -- "${COMP_WORDS[1]}"))
+		log_debug "cr:'${COMPREPLY[*]}'"
 	fi
 }
 

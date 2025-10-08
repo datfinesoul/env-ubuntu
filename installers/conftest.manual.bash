@@ -18,6 +18,7 @@ read -r version url <<< "$(
   -r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$m)))] | @tsv'
 )"
 
+version="${1:-$version}"
 info "V:${version}"
 info "U:${url}"
 
