@@ -7,6 +7,18 @@ set -o nounset
 set -o pipefail
 IFS=$'\n\t'
 
+if [[ "$(uname -s)" == "Darwin" ]]; then
+	function readlink {
+		greadlink "$@"
+	}
+	export -f readlink
+
+	function sed {
+		gsed "$@"
+	}
+	export -f sed
+fi
+
 script_path="$(readlink -e -- "${BASH_SOURCE[0]}")"
 script_dir="$(dirname "${script_path}")"
 cache_dir="${script_dir}/cache"
