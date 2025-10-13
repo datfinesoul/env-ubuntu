@@ -12,6 +12,7 @@
       "Read(~/.zshrc)"
     ],
     "deny": [
+      "Bash(assume:*)",
       "Bash(curl:*)",
       "Bash(git push:*)",
       "Bash(git rebase:*)",
@@ -19,6 +20,8 @@
       "Read(./.env.*)"
     ],
     "ask": [
+      "Bash(chown:*)",
+      "Bash(chmod:*)",
       "Bash(git commit:*)"
     ]
   },
