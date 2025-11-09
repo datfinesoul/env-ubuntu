@@ -2,7 +2,7 @@
 
 git_branch_clean () {
 	local BRANCH
-	BRANCH="${1}"
+	BRANCH="${1:-main}"
 
 	if [[ -n "${BRANCH}" ]]; then
 		git branch --merged "${BRANCH}" \
