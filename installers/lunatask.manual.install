@@ -63,6 +63,34 @@ else
 	#  ln --symbolic --force "${target_dir}/${versioned_exe}" "${bin_dir}/${executable}"
 	#fi
 
+	# Extract icon from AppImage
+	icon_dir="${HOME}/.local/share/icons"
+	mkdir -p "${icon_dir}"
+	icon_path="${icon_dir}/${executable}.png"
+
+	# AppImages can be extracted with --appimage-extract
+	# Extract to temp directory, find the icon, then clean up
+	extract_dir=$(mktemp -d)
+	pushd "${extract_dir}" > /dev/null
+	"${target_dir}/${versioned_exe}" --appimage-extract > /dev/null 2>&1 || true
+	# Look for icon in common locations within extracted AppImage
+	if [[ -f "squashfs-root/.DirIcon" ]]; then
+		cp "squashfs-root/.DirIcon" "${icon_path}"
+	elif [[ -f "squashfs-root/lunatask.png" ]]; then
+		cp "squashfs-root/lunatask.png" "${icon_path}"
+	elif [[ -f "squashfs-root/usr/share/icons/hicolor/512x512/apps/lunatask.png" ]]; then
+		cp "squashfs-root/usr/share/icons/hicolor/512x512/apps/lunatask.png" "${icon_path}"
+	elif [[ -f "squashfs-root/usr/share/icons/hicolor/256x256/apps/lunatask.png" ]]; then
+		cp "squashfs-root/usr/share/icons/hicolor/256x256/apps/lunatask.png" "${icon_path}"
+	else
+		# Find any png that might be the icon
+		find squashfs-root -maxdepth 2 -name "*.png" -type f | head -1 | xargs -I{} cp {} "${icon_path}" 2>/dev/null || true
+	fi
+	popd > /dev/null
+	rm -rf "${extract_dir}"
+
+	debug "icon_path:${icon_path}"
+
 	# AppImage stuff
 	cat > "${bin_dir}/${executable}" <<-DOC
 	#!/bin/bash
@@ -76,7 +104,7 @@ else
 	Name=LunaTask
 	Comment=Task Management Application
 	Exec=${bin_dir}/${executable}
-	Icon=${bin_dir}/${executable}
+	Icon=${icon_path}
 	Terminal=false
 	Type=Application
 	Categories=Office;ProjectManagement;
@@ -84,6 +112,7 @@ else
 	DOC
 
 	update-desktop-database "$HOME/.local/share/applications"
+	gtk-update-icon-cache -f -t "$HOME/.local/share/icons" 2>/dev/null || true
 fi
 
 # vim: set ft=bash :
