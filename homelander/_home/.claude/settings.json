@@ -25,5 +25,5 @@
       "Bash(git commit:*)"
     ]
   },
-  "alwaysThinkingEnabled": false
+  "alwaysThinkingEnabled": true
 }
