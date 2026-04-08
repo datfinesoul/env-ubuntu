@@ -2,45 +2,61 @@
 # shellcheck disable=SC1091
 source "$(dirname "${0}")/_core.bash"
 
-REPO="common-fate/granted"
-TOOLSET="granted"
-
-# use the passed in version first
-VERSION="${1:-}"
-if [[ -z "${VERSION}" ]]; then
-  # if no version was passed in, look at github
-  read -r VERSION URL <<< "$(gh api "/repos/${REPO}/releases/latest" \
-    | jq -r '.tag_name' \
-  )"
-fi
-VERSION="${VERSION#*v}"
-
-# OSX lowercase
-kernel_name="$(echo "${kernel_name}" | tr '[:upper:]' '[:lower:]')"
-ZIP_FILE="granted_${VERSION}_${kernel_name}_${machine}.tar.gz"
-URL="https://releases.commonfate.io/granted/v${VERSION}/${ZIP_FILE}"
-
-TARGET_DIR="${HOME}/.local/${TOOLSET}/${VERSION}"
-BIN_DIR="${HOME}/.local/bin"
-
-if [[ "${kernel_name}" == "darwin" ]]; then
-	brew tap common-fate/granted
-	brew install granted
-else
-  mkdir -p "${TARGET_DIR}"
-  mkdir -p "${BIN_DIR}"
-  >&2 echo ":: fetching ${URL}"
-  curl -OL "${URL}"
-  tar -zxvf "./${ZIP_FILE}"
-  mv assume "${TARGET_DIR}/assume"
-  [[ -f "assumego" ]] && mv assumego "${TARGET_DIR}/assumego"
-  mv granted "${TARGET_DIR}/granted"
-  ln -sf "${TARGET_DIR}/assume" "${BIN_DIR}/assume"
-  [[ -f "${TARGET_DIR}/assumego" ]] && ln -sf "${TARGET_DIR}/assumego" "${BIN_DIR}/assumego"
-  ln -sf "${TARGET_DIR}/granted" "${BIN_DIR}/granted"
+if [[ "${kernel_name}" == "Darwin" ]]; then
+  brew tap common-fate/granted
+  brew install common-fate/granted/granted
+  exit 0
 fi
 
-mkdir -p "$HOME/.aws"
-touch "$HOME/.aws/config"
-granted sso populate --prune --sso-region ap-northeast-1 --prefix 'io/' \
-  --no-credential-process https://u-io.awsapps.com/start
+### MODIFY: START
+repo="fwdcloudsec/granted"
+### MODIFY: END
+
+releases="$(gh api "/repos/${repo}/releases/latest")"
+
+# NOTE: sometimes you need ${kernel_name,,}
+read -r version url <<< "$(
+  printf "%s\n" "${releases}" \
+  | jq \
+  --arg k "${kernel_name,,}" \
+  --arg a "${architecture}" \
+  --arg m "${machine}" \
+  --arg r "${release_arch}" \
+  -r '[.tag_name, (.assets[].browser_download_url | select(test($k+"_"+$r+".tar.gz$")))] | @tsv'
+)"
+
+info "V:${version}"
+info "U:${url}"
+
+if [[ -z "${url}" ]]; then
+  fail "unable to find match, displaying all files for debugging"
+  printf "%s\n" "${releases}" \
+    | jq -r '[.tag_name, (.assets[].browser_download_url)]'
+  exit 1
+fi
+
+zip_file="${url##*/}"
+version="${version#*v}"
+
+info "ZF:${zip_file}"
+
+gh release download "v${version}" -R "${repo}" -p "${zip_file}"
+
+target_dir="${HOME}/.local/granted/${version}"
+bin_dir="${HOME}/.local/bin"
+
+mkdir -p "${target_dir}"
+mkdir -p "${bin_dir}"
+
+tar xzf "${zip_file}"
+
+mv granted "${target_dir}/granted"
+mv assume "${target_dir}/assume"
+[[ -f "assumego" ]] && mv assumego "${target_dir}/assumego"
+
+ln -sf "${target_dir}/granted" "${bin_dir}/granted"
+ln -sf "${target_dir}/assume" "${bin_dir}/assume"
+[[ -f "${target_dir}/assumego" ]] && ln -sf "${target_dir}/assumego" "${bin_dir}/assumego"
+
+info "granted ${version} installed"
+plain "\ngranted sso populate --prune --sso-region ap-northeast-1 --prefix 'io/' --no-credential-process https://u-io.awsapps.com/start\n"

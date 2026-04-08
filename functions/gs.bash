@@ -29,12 +29,6 @@ gs() {
 	declare -A seen_commands
 	local -a dir_order
 
-	# Check for jq availability
-	local has_jq=0
-	if type jq &> /dev/null; then
-		has_jq=1
-	fi
-
 	# Check OS type for find command compatibility
 	local is_mac=0
 	if [[ "$(uname)" == "Darwin" ]]; then
@@ -82,29 +76,36 @@ gs() {
 				find_cmd="find \"${gs_path}/\" -type l \( ! -xtype l -perm -111 -o -name '*.mod' \) -exec basename {} \;"
 			fi
 
+			# Load descriptions from descriptions.toml if present
+			declare -A dir_descriptions
+			local toml_file="${gs_path}/descriptions.toml"
+			if [[ -f "${toml_file}" ]]; then
+				while IFS= read -r line; do
+					[[ "${line}" =~ ^[[:space:]]*# ]] && continue
+					[[ "${line}" =~ ^[[:space:]]*$ ]] && continue
+					if [[ "${line}" =~ ^[[:space:]]*([^[:space:]]+)[[:space:]]*=[[:space:]]*\"(.*)\"[[:space:]]*$ ]]; then
+						dir_descriptions["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
+					fi
+				done < "${toml_file}"
+			fi
+
 			# Filter out already-seen commands (mimics PATH resolution where first match wins)
 			local cmd_list=""
 			while IFS= read -r cmd; do
 				[[ -z "${cmd}" ]] && continue
 				if [[ -z "${seen_commands["${cmd}"]}" ]]; then
 					seen_commands["${cmd}"]=1
-
-					# Check for description file (same name with .gs.json suffix)
-					local desc_file="${gs_path}/${cmd}.gs.json"
-					local desc=""
-					if [[ -f "${desc_file}" ]]; then
-						# Extract description using jq if available
-						if [[ ${has_jq} -eq 1 ]]; then
-							desc=$(jq -r '.description // empty' "${desc_file}" 2>/dev/null)
-						fi
-					fi
-
-					# Store description for this command
-					cmd_descriptions["${cmd}"]="${desc}"
-
+					cmd_descriptions["${cmd}"]="${dir_descriptions["${cmd}"]}"
 					cmd_list+="${cmd}"$'\n'
 				fi
 			done < <(eval "${find_cmd}" | sort -f)
+
+			# Backfill missing descriptions from parent directories
+			for key in "${!dir_descriptions[@]}"; do
+				if [[ -n "${seen_commands["${key}"]}" && -z "${cmd_descriptions["${key}"]}" ]]; then
+					cmd_descriptions["${key}"]="${dir_descriptions["${key}"]}"
+				fi
+			done
 
 			# Remove trailing newline
 			cmd_list="${cmd_list%$'\n'}"

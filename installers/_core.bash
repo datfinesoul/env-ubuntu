@@ -26,13 +26,16 @@ kernel_name="$(uname -s)" # Darwin/Linux
 machine="$(uname -m)"
 if [[ "${machine}" == "x86_64" ]]; then
 	architecture="amd64"
+	release_arch="x86_64"
 else
 	architecture="arm64"
+	release_arch="arm64"
 fi
 
-debug "kernel_name:  ${kernel_name}"
-debug "machine:      ${machine}"
-debug "architecture: ${architecture}"
+debug "kernel_name:   ${kernel_name}"
+debug "machine:       ${machine}"
+debug "architecture:  ${architecture}"
+debug "release_arch:  ${release_arch}"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
 	function readlink {
