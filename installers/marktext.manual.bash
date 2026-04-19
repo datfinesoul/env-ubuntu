@@ -8,7 +8,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 ### MODIFY: START
-repo='pavlobu/deskreen'
+repo='marktext/marktext'
 pattern="${release_arch}[.]AppImage$"
 ### MODIFY: END
 
@@ -62,12 +62,12 @@ pushd "${extract_dir}" > /dev/null
 "${target_dir}/${versioned_exe}" --appimage-extract > /dev/null 2>&1 || true
 if [[ -f "squashfs-root/.DirIcon" ]]; then
 	cp "squashfs-root/.DirIcon" "${icon_path}"
-elif [[ -f "squashfs-root/deskreen-ce.png" ]]; then
-	cp "squashfs-root/deskreen-ce.png" "${icon_path}"
-elif [[ -f "squashfs-root/usr/share/icons/hicolor/512x512/apps/deskreen-ce.png" ]]; then
-	cp "squashfs-root/usr/share/icons/hicolor/512x512/apps/deskreen-ce.png" "${icon_path}"
-elif [[ -f "squashfs-root/usr/share/icons/hicolor/256x256/apps/deskreen-ce.png" ]]; then
-	cp "squashfs-root/usr/share/icons/hicolor/256x256/apps/deskreen-ce.png" "${icon_path}"
+elif [[ -f "squashfs-root/marktext.png" ]]; then
+	cp "squashfs-root/marktext.png" "${icon_path}"
+elif [[ -f "squashfs-root/usr/share/icons/hicolor/512x512/apps/marktext.png" ]]; then
+	cp "squashfs-root/usr/share/icons/hicolor/512x512/apps/marktext.png" "${icon_path}"
+elif [[ -f "squashfs-root/usr/share/icons/hicolor/256x256/apps/marktext.png" ]]; then
+	cp "squashfs-root/usr/share/icons/hicolor/256x256/apps/marktext.png" "${icon_path}"
 else
 	find squashfs-root -maxdepth 2 -name "*.png" -type f | head -1 | xargs -I{} cp {} "${icon_path}" 2>/dev/null || true
 fi
@@ -84,16 +84,16 @@ DOC
 chmod 755 "${bin_dir}/${executable}"
 
 # Create desktop entry
-cat > "$HOME/.local/share/applications/deskreen.desktop" <<-DOC
+cat > "$HOME/.local/share/applications/marktext.desktop" <<-DOC
 [Desktop Entry]
-Name=Deskreen
-Comment=Turn any device into a secondary screen
+Name=Marktext
+Comment=Markdown Editor
 Exec=${bin_dir}/${executable}
 Icon=${icon_path}
 Terminal=false
 Type=Application
-Categories=Utility;Network;
-StartupWMClass=Deskreen
+Categories=Office;Editor;TextEditor;
+StartupWMClass=marktext
 DOC
 
 update-desktop-database "$HOME/.local/share/applications"
