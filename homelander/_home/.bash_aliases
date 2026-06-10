@@ -100,3 +100,5 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 	alias meld='/Applications/Meld.app/Contents/MacOS/Meld'
 fi
 
+alias fixkb='printf "\e[=0u"'
+
