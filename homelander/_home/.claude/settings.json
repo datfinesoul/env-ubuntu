@@ -28,5 +28,6 @@
   "model": "opus[1m]",
   "alwaysThinkingEnabled": true,
   "theme": "dark-daltonized",
-  "autoCompactEnabled": false
+  "autoCompactEnabled": false,
+  "tui": "fullscreen"
 }
