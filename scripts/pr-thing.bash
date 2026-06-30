@@ -292,3 +292,6 @@ log "Rate limit (GraphQL) AFTER:  ${RL_AFTER}/${RL_LIMIT} points remaining (cons
 
 ELAPSED=$(( SECONDS - START ))
 log "Done. Indexed ${TOTAL_PRS} open PR(s) from ${matched} in-window repo(s) (scanned ${scanned}) in $(fmt_dur "$ELAPSED")."
+
+
+#jq -r '.[] | [.repository, (.number|tostring), (.author // "—"), .title, .url, tojson] | @tsv' /tmp/out.json | fzf --delimiter='\t'       --with-nth=1,2,3,4       --nth=1,3       --header='type to filter by repo or author · enter to pick'       --preview='printf %s {6} | jq .'       --preview-window='right,55%,wrap' | awk -F'\t' '{ print $1 " #" $2 "  " $5 }'
