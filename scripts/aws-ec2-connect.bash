@@ -176,10 +176,10 @@ else
 	instances_raw="$( \
 		aws ec2 describe-instances \
 		--filters "Name=instance-state-name,Values=running" \
-		--query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value | [0], PrivateIpAddress, ImageId, LaunchTime]' \
+		--query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value | [0], PrivateIpAddress, ImageId, InstanceType, LaunchTime]' \
 		--output text \
 		--region "$default_region" \
-		| sort -t$'\t' -k5,5 -r \
+		| sort -t$'\t' -k6,6 -r \
 	)"
 	if [[ -z "$instances_raw" ]]; then
 		echo "[!] No running instances found in $default_region" >&2
@@ -199,7 +199,7 @@ else
 		--height=10 \
 		--layout=reverse \
 		--no-multi \
-		--header="Instance-ID Name Private-IP Image-ID Launch-Time" \
+		--header="Instance-ID Name Private-IP Image-ID Instance-Type Launch-Time" \
 		--bind="esc:clear-query" \
 	)"
 	if [[ -z "$selected_instance" ]]; then
