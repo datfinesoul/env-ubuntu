@@ -171,15 +171,31 @@ else
 	. assume "${org}/${account_name}/SRE"
 
 	echo "[i] Looking for the instance..."
-	selected_instance="$( \
+	# AWS `--output text` is tab-delimited; keep tabs as the field separator so
+	# instance names containing spaces don't corrupt the columns.
+	instances_raw="$( \
 		aws ec2 describe-instances \
 		--filters "Name=instance-state-name,Values=running" \
 		--query 'Reservations[].Instances[].[InstanceId, Tags[?Key==`Name`].Value | [0], PrivateIpAddress, ImageId, LaunchTime]' \
 		--output text \
 		--region "$default_region" \
-		| sort -k5 -r \
-		| column -t \
+		| sort -t$'\t' -k5,5 -r \
+	)"
+	if [[ -z "$instances_raw" ]]; then
+		echo "[!] No running instances found in $default_region" >&2
+		exit 1
+	fi
+
+	# Each menu line is: <aligned display>\t<instance_id>\t<instance_name>\t<image_id>
+	# fzf displays only the first (aligned) field; the trailing tab-delimited
+	# fields carry the real values so we never re-parse the display text.
+	selected_instance="$( \
+		paste -d$'\t' \
+			<(printf '%s\n' "$instances_raw" | column -t -s $'\t') \
+			<(printf '%s\n' "$instances_raw" | awk -F'\t' 'BEGIN{OFS="\t"}{print $1, $2, $4}') \
 		| fzf --prompt="Select Instance: " \
+		--delimiter=$'\t' \
+		--with-nth=1 \
 		--height=10 \
 		--layout=reverse \
 		--no-multi \
@@ -190,9 +206,9 @@ else
 		exit 1
 	fi
 
-	instance_id="$(awk '{print $1}' <<< "$selected_instance")"
-	instance_name="$(awk '{print $2}' <<< "$selected_instance")"
-	image_id="$(awk '{print $4}' <<< "$selected_instance")"
+	instance_id="$(cut -f2 <<< "$selected_instance")"
+	instance_name="$(cut -f3 <<< "$selected_instance")"
+	image_id="$(cut -f4 <<< "$selected_instance")"
 
 	image_name="$( \
 		aws ec2 describe-images \
