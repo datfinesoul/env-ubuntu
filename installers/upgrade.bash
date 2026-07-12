@@ -23,6 +23,8 @@ script_path="$(readlink -e -- "${BASH_SOURCE[0]}")"
 script_dir="$(dirname "${script_path}")"
 cache_dir="${script_dir}/cache"
 
+trap 'info "Upgrade interrupted"; exit 130' INT TERM
+
 if [[ ! -d "${cache_dir}" ]]; then
 	fail "Cache directory not found: ${cache_dir}"
 	exit 1

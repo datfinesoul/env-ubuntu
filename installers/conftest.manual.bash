@@ -2,6 +2,11 @@
 # shellcheck disable=SC1091
 source "$(dirname "${0}")/_core.bash"
 
+if [[ "${kernel_name}" == "Darwin" ]]; then
+  brew install conftest
+	exit 0
+fi
+
 ### MODIFY: START
 repo="open-policy-agent/conftest"
 ### MODIFY: END

@@ -38,11 +38,11 @@
 	dc = diff --cached
 	ddc = diff --cached --diff-filter=d
 	; Show diff with side-by-side view using delta
-	ds = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff'"
-	dds = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --diff-filter=d'"
+	ds = "!f() { export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff \"$@\"; }; f"
+	dds = "!f() { export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --diff-filter=d \"$@\"; }; f"
 	; Show staged diff with side-by-side view using delta
-	dsc = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached'"
-	ddsc = "!bash -c 'export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached --diff-filter=d'"
+	dsc = "!f() { export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached \"$@\"; }; f"
+	ddsc = "!f() { export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git diff --cached --diff-filter=d \"$@\"; }; f"
 	; Show diff stats for staged changes
 	dnc = diff --cached --stat
 	; Show diff stats for unstaged changes
@@ -93,6 +93,7 @@
 	empty = commit -m trigger-checks --allow-empty
 	; View previous releases by looking at tags
 	viewprevrel = "!sh -c 'git mergelog | grep \"tag: \" | head'"
+	ss = "!f() { export DELTA_FEATURES=\"side-by-side unobtrusive-line-numbers decorations\"; git show \"$@\"; }; f"
 
 [color]
 	status = auto
@@ -163,6 +164,8 @@
 	light = false      ; set to true if you're in a terminal w/ a light background color (e.g. the default macOS terminal)
 	;side-by-side = true
 	features = unobtrusive-line-numbers decorations
+	plus-style = "bold white #004400"
+	plus-emph-style = "bold white #006600"
 	;whitespace-error-style = 22 reverse
 [delta "unobtrusive-line-numbers"]
 	line-numbers = true
