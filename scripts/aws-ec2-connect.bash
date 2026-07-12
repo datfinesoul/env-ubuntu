@@ -8,6 +8,10 @@ fi
 history_file="$HOME/.config/aws-ec2-connect/history.json"
 region_history_file="$HOME/.config/aws-ec2-connect/region-history.json"
 
+# Abort the whole script on Ctrl+C during selection / AWS calls. Cleared
+# before the final interactive SSM session so Ctrl+C keeps working inside it.
+trap 'exit 130' INT
+
 # Persist the current connection to history (most-recent first, deduped, max 5)
 save_history() {
 	local existing='[]'
@@ -214,16 +218,21 @@ else
 	base_region="us-east-1"
 	additional_regions=("ap-southeast-1" "eu-west-1" "us-west-2")
 
-	# Default to the most-used region for this account, falling back to the
-	# base region if no history exists yet. The chosen default is also moved
-	# to the top of the candidate list so it is visually preselected.
+	# Default to the most-used region for this account. When no region has
+	# been used yet for this account, present the candidate list in its
+	# natural order with no preselected default. Otherwise the most-used
+	# region is moved to the top of the candidate list so it is visually
+	# preselected.
 	top_region="$(top_region_for_account "$account_id")"
-	[[ -z "$top_region" ]] && top_region="$base_region"
 
-	regions=("$top_region")
-	for r in "$base_region" "${additional_regions[@]}"; do
-		[[ "$r" != "$top_region" ]] && regions+=("$r")
-	done
+	if [[ -n "$top_region" ]]; then
+		regions=("$top_region")
+		for r in "$base_region" "${additional_regions[@]}"; do
+			[[ "$r" != "$top_region" ]] && regions+=("$r")
+		done
+	else
+		regions=("$base_region" "${additional_regions[@]}")
+	fi
 
 	default_region="$( \
 		printf '%s\n' "${regions[@]}" \
@@ -298,6 +307,9 @@ else
 	save_history
 	save_region_history
 fi
+
+# Hand control of Ctrl+C to the interactive SSM session from here on.
+trap - INT
 
 ssm_args=()
 case "$image_name" in
