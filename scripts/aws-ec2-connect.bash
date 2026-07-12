@@ -6,6 +6,7 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 history_file="$HOME/.config/aws-ec2-connect/history.json"
+region_history_file="$HOME/.config/aws-ec2-connect/region-history.json"
 
 # Persist the current connection to history (most-recent first, deduped, max 5)
 save_history() {
@@ -21,6 +22,7 @@ save_history() {
 		--arg org "$org" \
 		--arg account_name "$account_name" \
 		--arg account_id "$account_id" \
+		--arg role "$role" \
 		--arg region "$default_region" \
 		--arg instance_id "$instance_id" \
 		--arg instance_name "$instance_name" \
@@ -29,6 +31,7 @@ save_history() {
 			org: $org,
 			account_name: $account_name,
 			account_id: $account_id,
+			role: $role,
 			region: $region,
 			instance_id: $instance_id,
 			instance_name: $instance_name,
@@ -37,21 +40,54 @@ save_history() {
 			.instance_id != $instance_id
 			or .region != $region
 			or .account_id != $account_id
+			or .role != $role
 		)))) | .[0:5]' \
 		> "$tmp" && mv "$tmp" "$history_file"
 }
 
+# Persist region usage counts per account so the most-used region becomes the
+# default for that account on subsequent runs.
+save_region_history() {
+	local existing='{}'
+	if [[ -f "$region_history_file" ]]; then
+		existing="$(cat "$region_history_file")"
+	fi
+	mkdir -p "$(dirname "$region_history_file")"
+	local tmp
+	tmp="$(mktemp)"
+	jq -n \
+		--argjson existing "$existing" \
+		--arg account_id "$account_id" \
+		--arg region "$default_region" \
+		'($existing | .[$account_id][$region] = ((.[$account_id][$region] // 0) + 1))' \
+		> "$tmp" && mv "$tmp" "$region_history_file"
+}
+
+# Return the most-used region for an account (empty if none recorded).
+top_region_for_account() {
+	local acct="$1"
+	local top
+	if [[ -f "$region_history_file" ]]; then
+		top="$(jq -r --arg acct "$acct" \
+			'.[$acct] // {} | to_entries | sort_by(-.value) | .[0].key // empty' \
+			"$region_history_file" 2>/dev/null)"
+	fi
+	echo "$top"
+}
+
 mapfile -t profiles < <(awk '
 /^\[profile / {
-    if (profile != "") print profile, acct
+    if (profile != "") print profile, role, acct
     line = $0
     gsub(/^\[profile /, "", line)
     gsub(/\]$/, "", line)
     n = split(line, parts, "/")
     if (n == 3) {
         profile = parts[1] " " parts[2]
+        role = parts[3]
     } else {
         profile = ""
+        role = ""
     }
     acct = ""
     next
@@ -62,7 +98,7 @@ mapfile -t profiles < <(awk '
     acct = a[2]
 }
 END {
-    if (profile != "") print profile, acct
+    if (profile != "") print profile, role, acct
 }
 ' ~/.aws/config)
 
@@ -110,21 +146,23 @@ if [[ "$sel_type" == "prev" ]]; then
 	org="$(jq -r '.org' <<< "$entry")"
 	account_name="$(jq -r '.account_name' <<< "$entry")"
 	account_id="$(jq -r '.account_id' <<< "$entry")"
+	role="$(jq -r '.role // "SRE"' <<< "$entry")"
 	default_region="$(jq -r '.region' <<< "$entry")"
 	instance_id="$(jq -r '.instance_id' <<< "$entry")"
 	instance_name="$(jq -r '.instance_name' <<< "$entry")"
 	image_name="$(jq -r '.image_name' <<< "$entry")"
 
-	export org account_name account_id default_region
+	export org account_name account_id role default_region
 
-	echo "[i] logging into $account_name ($account_id)"
-	. assume "${org}/${account_name}/SRE"
+	echo "[i] logging into $account_name ($account_id) as $role"
+	. assume "${org}/${account_name}/${role}"
 
 	echo "[i] AMI: $image_name"
 	echo "[i] connecting to $instance_id ($instance_name)"
 
 	# Bump this connection to the top of the history.
 	save_history
+	save_region_history
 else
 	org="$sel_key"
 
@@ -145,17 +183,52 @@ else
 
 	account_id="$( \
 		printf '%s\n' "${profiles[@]}" \
-		| awk -v org="$org" -v name="$account_name" '$1 == org && $2 == name {print $3}' \
+		| awk -v org="$org" -v name="$account_name" '$1 == org && $2 == name {print $4}' \
 		| head -n1 \
 	)"
+
+	mapfile -t roles_for_account < <( \
+		printf '%s\n' "${profiles[@]}" \
+		| awk -v org="$org" -v name="$account_name" '$1 == org && $2 == name {print $3}' \
+		| sort -u \
+	)
+	if [[ "${#roles_for_account[@]}" -eq 0 || -z "${roles_for_account[0]}" ]]; then
+		echo "[!] No roles found for $org/$account_name" >&2
+		exit 1
+	elif [[ "${#roles_for_account[@]}" -eq 1 ]]; then
+		role="${roles_for_account[0]}"
+	else
+		role="$( \
+			printf '%s\n' "${roles_for_account[@]}" \
+			| fzf --prompt="Select Role: " \
+			--height=10 \
+			--layout=reverse \
+			--no-multi \
+			--bind="esc:clear-query" \
+		)"
+		if [[ -z "$role" ]]; then
+			exit 1
+		fi
+	fi
 
 	base_region="us-east-1"
 	additional_regions=("ap-southeast-1" "eu-west-1" "us-west-2")
 
+	# Default to the most-used region for this account, falling back to the
+	# base region if no history exists yet. The chosen default is also moved
+	# to the top of the candidate list so it is visually preselected.
+	top_region="$(top_region_for_account "$account_id")"
+	[[ -z "$top_region" ]] && top_region="$base_region"
+
+	regions=("$top_region")
+	for r in "$base_region" "${additional_regions[@]}"; do
+		[[ "$r" != "$top_region" ]] && regions+=("$r")
+	done
+
 	default_region="$( \
-		printf '%s\n' "$base_region" "${additional_regions[@]}" \
+		printf '%s\n' "${regions[@]}" \
 		| fzf --prompt="Select Region: " \
-		--query="$base_region" \
+		--query="$top_region" \
 		--height=10 \
 		--layout=reverse \
 		--no-multi \
@@ -165,10 +238,10 @@ else
 		exit 1
 	fi
 
-	export org account_name account_id default_region
+	export org account_name account_id role default_region
 
-	echo "[i] logging into $account_name ($account_id)"
-	. assume "${org}/${account_name}/SRE"
+	echo "[i] logging into $account_name ($account_id) as $role"
+	. assume "${org}/${account_name}/${role}"
 
 	echo "[i] Looking for the instance..."
 	# AWS `--output text` is tab-delimited; keep tabs as the field separator so
@@ -223,6 +296,7 @@ else
 
 	# Record this connection before starting the session.
 	save_history
+	save_region_history
 fi
 
 ssm_args=()
