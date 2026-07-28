@@ -25,9 +25,10 @@
       "Bash(git commit:*)"
     ]
   },
-  "model": "opus[1m]",
+  "model": "sonnet",
   "alwaysThinkingEnabled": true,
+  "effortLevel": "low",
+  "tui": "fullscreen",
   "theme": "dark-daltonized",
-  "autoCompactEnabled": false,
-  "tui": "fullscreen"
+  "autoCompactEnabled": false
 }
