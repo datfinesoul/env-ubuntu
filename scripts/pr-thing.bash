@@ -2,6 +2,10 @@
 #
 # index-org-prs.sh — Index open PRs across the repos in a GitHub org.
 #
+# In one sentence: it's a rate-limit-conscious org-wide "open PR dashboard"
+# generator that favors recently-active repos to stay fast and cheap, while
+# being upfront about what it might skip.
+#
 # Strategy: a nested GraphQL query, paginated manually over the repo list,
 # ordered by PUSHED_AT (newest first). By default it only scans repos pushed
 # within the last 15 days and STOPS as soon as it crosses that boundary, so
@@ -75,6 +79,10 @@ iso_days_ago() {
 
 usage() {
   cat >&2 <<'USAGE'
+A rate-limit-conscious org-wide "open PR dashboard" generator that favors
+recently-active repos to stay fast and cheap, while being upfront about what
+it might skip.
+
 Usage: index-org-prs.sh ORG [-o OUTFILE] [-n PAGE_SIZE] [--since-days N]
                             [--all] [--labels] [--include-archived]
 
