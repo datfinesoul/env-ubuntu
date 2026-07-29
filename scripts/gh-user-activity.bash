@@ -101,7 +101,7 @@ Usage: gh-user-activity.bash USERNAME [--days N] [--limit N]
                                       [--review-requested] [--json] [-o FILE]
 
   USERNAME              GitHub login to inspect (required)
-      --days N          Look back N days by updated-at (default: 7)
+      --days N          Look back N days by updated-at (default: 2)
   -L, --limit N         Max items to fetch, up to 1000 (default: 200)
       --review-requested  Also list PRs awaiting the user's review (in their
                           own section; only those they haven't otherwise
