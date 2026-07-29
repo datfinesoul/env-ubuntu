@@ -54,7 +54,7 @@ set -euo pipefail
 
 # ---- defaults -------------------------------------------------------------
 USERNAME=""
-DAYS=7
+DAYS=2
 LIMIT=200
 WANT_JSON=0
 WANT_REVIEW_REQ=0
@@ -151,9 +151,17 @@ START=$SECONDS
 # Only colorize a report going to an interactive terminal. Honor NO_COLOR,
 # and never colorize JSON or file output (would corrupt it).
 C_RESET=""; C_BOLD=""; C_DIM=""; C_OPEN=""; C_CLOSED=""; C_MERGED=""
+C_AUTHORED=""; C_ASSIGNED=""; C_MENTIONED=""; C_COMMENTED=""; C_REVIEWED=""; C_REVREQ=""
 if [[ -z "${NO_COLOR:-}" && "$WANT_JSON" -eq 0 && -z "$OUTFILE" && -t 1 ]]; then
   C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
   C_OPEN=$'\033[32m'; C_CLOSED=$'\033[31m'; C_MERGED=$'\033[35m'
+  # per-activity colors
+  C_AUTHORED=$'\033[1;32m'   # bold green  - they created it
+  C_ASSIGNED=$'\033[33m'     # yellow      - it's on them
+  C_MENTIONED=$'\033[34m'    # blue        - pinged
+  C_COMMENTED=$'\033[36m'    # cyan        - chimed in
+  C_REVIEWED=$'\033[35m'     # magenta     - actually reviewed
+  C_REVREQ=$'\033[2;33m'     # dim yellow  - asked, not yet done
 fi
 
 # ---- rate limit BEFORE ----------------------------------------------------
@@ -247,16 +255,20 @@ fi
 jq -r --arg user "$USERNAME" --arg cutoff "$CUTOFF" --arg days "$DAYS" \
       --arg showrr "$WANT_REVIEW_REQ" \
       --arg reset "$C_RESET" --arg bold "$C_BOLD" --arg dim "$C_DIM" \
-      --arg open "$C_OPEN" --arg closed "$C_CLOSED" --arg merged "$C_MERGED" '
+      --arg open "$C_OPEN" --arg closed "$C_CLOSED" --arg merged "$C_MERGED" \
+      --arg cauth "$C_AUTHORED" --arg cassign "$C_ASSIGNED" --arg cment "$C_MENTIONED" \
+      --arg ccomm "$C_COMMENTED" --arg crev "$C_REVIEWED" --arg crevreq "$C_REVREQ" '
   def repo:   (.repository.nameWithOwner // "unknown");
   def who:    (.author.login // "ghost");
-  def roles:  (.roles | join(","));
+  def rolecol($r): ({authored:$cauth, assigned:$cassign, mentioned:$cment,
+                     commented:$ccomm, reviewed:$crev, "review-requested":$crevreq}[$r] // "");
+  def roles:  (.roles | map(rolecol(.) + . + $reset) | join(","));
   def st:     (.state | ascii_downcase);
   def stcol:  ({open: $open, closed: $closed, merged: $merged}[st] // "");
   def direct: any(.roles[]; IN("authored","assigned","mentioned","commented","reviewed"));
   def line:
     "  [\(stcol)\(st)\($reset)] \(repo)#\(.number)  \($bold)\(.title)\($reset)",
-    "        \($dim)\(roles) · by @\(who) · updated \(.updatedAt[0:10]) · \(.url)\($reset)";
+    "        \(roles)\($dim) · by @\(who) · updated \(.updatedAt[0:10]) · \(.url)\($reset)";
 
   ([.[] | select(direct and .isPullRequest)])        as $prs
   | ([.[] | select(direct and (.isPullRequest|not))]) as $issues
