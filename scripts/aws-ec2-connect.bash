@@ -7,6 +7,7 @@ fi
 
 history_file="$HOME/.config/aws-ec2-connect/history.json"
 region_history_file="$HOME/.config/aws-ec2-connect/region-history.json"
+account_history_file="$HOME/.config/aws-ec2-connect/account-history.json"
 
 # Abort the whole script on Ctrl+C during selection / AWS calls. Cleared
 # before the final interactive SSM session so Ctrl+C keeps working inside it.
@@ -79,6 +80,36 @@ top_region_for_account() {
 	echo "$top"
 }
 
+# Persist account usage counts per org so the most-used account becomes the
+# default for that org on subsequent runs.
+save_account_history() {
+	local existing='{}'
+	if [[ -f "$account_history_file" ]]; then
+		existing="$(cat "$account_history_file")"
+	fi
+	mkdir -p "$(dirname "$account_history_file")"
+	local tmp
+	tmp="$(mktemp)"
+	jq -n \
+		--argjson existing "$existing" \
+		--arg org "$org" \
+		--arg account_name "$account_name" \
+		'($existing | .[$org][$account_name] = ((.[$org][$account_name] // 0) + 1))' \
+		> "$tmp" && mv "$tmp" "$account_history_file"
+}
+
+# Return the most-used account for an org (empty if none recorded).
+top_account_for_org() {
+	local org="$1"
+	local top
+	if [[ -f "$account_history_file" ]]; then
+		top="$(jq -r --arg org "$org" \
+			'.[$org] // {} | to_entries | sort_by(-.value) | .[0].key // empty' \
+			"$account_history_file" 2>/dev/null)"
+	fi
+	echo "$top"
+}
+
 mapfile -t profiles < <(awk '
 /^\[profile / {
     if (profile != "") print profile, role, acct
@@ -125,8 +156,8 @@ mapfile -t org_lines < <( \
 
 selection="$( \
 	{
-		[[ ${#history_lines[@]} -gt 0 ]] && printf '%s\n' "${history_lines[@]}"
 		printf '%s\n' "${org_lines[@]}"
+		[[ ${#history_lines[@]} -gt 0 ]] && printf '%s\n' "${history_lines[@]}"
 	} \
 	| fzf --prompt="Select Org or [prev]: " \
 	--delimiter=$'\t' \
@@ -167,19 +198,44 @@ if [[ "$sel_type" == "prev" ]]; then
 	# Bump this connection to the top of the history.
 	save_history
 	save_region_history
+	save_account_history
 else
 	org="$sel_key"
 
-	account_name="$( \
+	# Default to the most-used account for this org. When no account has
+	# been used yet for this org, present the candidate list in its natural
+	# order with no preselected default. Otherwise the most-used account is
+	# moved to the top of the candidate list so it is visually preselected.
+	top_account="$(top_account_for_org "$org")"
+
+	mapfile -t accounts_for_org < <( \
 		printf '%s\n' "${profiles[@]}" \
 		| grep "^$org " \
 		| awk '{print $2}' \
 		| sort -u \
-		| fzf --prompt="Select Account: " \
-		--height=10 \
-		--layout=reverse \
-		--no-multi \
-		--bind="esc:clear-query" \
+	)
+	if [[ -n "$top_account" ]]; then
+		accounts=("$top_account")
+		for a in "${accounts_for_org[@]}"; do
+			[[ "$a" != "$top_account" ]] && accounts+=("$a")
+		done
+	else
+		accounts=("${accounts_for_org[@]}")
+	fi
+
+	account_fzf_args=(
+		--prompt="Select Account: "
+		--query="$top_account"
+		--height=10
+		--layout=reverse
+		--no-multi
+		--bind="esc:clear-query"
+	)
+	[[ -n "$top_account" ]] && account_fzf_args+=(--footer="ESC: clear selection")
+
+	account_name="$( \
+		printf '%s\n' "${accounts[@]}" \
+		| fzf "${account_fzf_args[@]}" \
 	)"
 	if [[ -z "$account_name" ]]; then
 		exit 1
@@ -234,14 +290,19 @@ else
 		regions=("$base_region" "${additional_regions[@]}")
 	fi
 
+	region_fzf_args=(
+		--prompt="Select Region: "
+		--query="$top_region"
+		--height=10
+		--layout=reverse
+		--no-multi
+		--bind="esc:clear-query"
+	)
+	[[ -n "$top_region" ]] && region_fzf_args+=(--footer="ESC: clear selection")
+
 	default_region="$( \
 		printf '%s\n' "${regions[@]}" \
-		| fzf --prompt="Select Region: " \
-		--query="$top_region" \
-		--height=10 \
-		--layout=reverse \
-		--no-multi \
-		--bind="esc:clear-query" \
+		| fzf "${region_fzf_args[@]}" \
 	)"
 	if [[ -z "$default_region" ]]; then
 		exit 1
@@ -306,6 +367,7 @@ else
 	# Record this connection before starting the session.
 	save_history
 	save_region_history
+	save_account_history
 fi
 
 # Hand control of Ctrl+C to the interactive SSM session from here on.
