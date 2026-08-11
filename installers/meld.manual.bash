@@ -24,10 +24,11 @@ else
 
   git clone 'https://gitlab.gnome.org/GNOME/meld.git'
   cd meld
-  meson -Dprefix="${HOME}/.local" _build
-  cd _build
-  ninja
-  ninja install
+	git checkout '3.22.3'
+	meson setup -Dprefix="${HOME}/.local" _build
+	cd _build
+	ninja
+	ninja install
 fi
 
 # vim: set ft=bash :
