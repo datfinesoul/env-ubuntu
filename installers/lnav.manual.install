@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/_core.bash"
+
+if [[ "${kernel_name}" == "Darwin" ]]; then
+	brew install lnav
+	exit 0
+fi
+
+### MODIFY: START
+repo='tstack/lnav'
+pattern="linux-musl-${release_arch}\.zip$"
+### MODIFY: END
+
+releases="$( \
+	curl -s "https://api.github.com/repos/${repo}/releases/latest" \
+	)"
+
+read -r version url <<< "$(
+	printf "%s\n" "${releases}" \
+	| jq \
+	--arg pattern "$pattern" \
+	-r '[.tag_name, (.assets[].browser_download_url | select(test($pattern)))] | @tsv'
+)"
+
+debug "version:${version}"
+debug "url:${url}"
+
+if [[ -z "${url}" ]]; then
+	fail "unable to find match, displaying all files for debugging"
+	printf "%s\n" "${releases}" \
+		| jq -r '[.tag_name, (.assets[].browser_download_url)]'
+	exit 1
+fi
+
+downloaded_file="${url##*/}"
+executable="${repo##*/}"
+versioned_exe="${executable}_${version}"
+extract_dir="${executable}-${version#v}"
+
+debug "downloaded_file:${downloaded_file}"
+debug "executable:${executable}"
+debug "versioned_exe:${versioned_exe}"
+debug "extract_dir:${extract_dir}"
+
+curl -L -o "${downloaded_file}" "${url}"
+
+target_dir="${HOME}/.local/${executable}"
+bin_dir="${HOME}/.local/bin"
+
+mkdir -p "${target_dir}"
+mkdir -p "${bin_dir}"
+
+unzip -o -q "${downloaded_file}"
+
+mv "${extract_dir}/${executable}" "${target_dir}/${versioned_exe}"
+chmod 755 "${target_dir}/${versioned_exe}"
+
+ln --symbolic --force "${target_dir}/${versioned_exe}" "${bin_dir}/${executable}"
+
+info "${executable} ${version} installed"
+
+# vim: set ft=bash :
