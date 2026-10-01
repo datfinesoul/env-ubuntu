@@ -105,4 +105,3 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 alias fixkb='printf "\e[=0u"'
-alias pi="pi --tui-mode fullscreen"
