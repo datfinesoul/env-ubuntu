@@ -2,49 +2,57 @@
 # shellcheck source=./_core.bash
 . "$(dirname "${0}")/_core.bash"
 
-# TL;DR: Creates symlinks from $HOME to files/dirs in homelander/_home/
-#
-# Summary:
-#   - Scans homelander/_home/ for files and directories
-#   - For files: creates symlink at $HOME/.filename -> homelander/_home/.filename
-#   - For dirs: creates directory at $HOME/.dirname/, then symlinks each file inside
-#   - Skips existing non-symlink files/dirs to prevent overwriting user data
-#
+# Creates symlinks under $HOME for content in homelander/_home/. Top-level
+# directories are materialized so managed entries can coexist with local state.
+# Add nested directories to materialized_directories when they also contain a
+# mixture of managed configuration and application-generated files.
 
 plugin_dir="${script_dir}/homelander/_home"
-pushd "$plugin_dir" > /dev/null
-find "." -maxdepth 1 -mindepth 1 -print0 \
-	| while IFS= read -r -d '' file; do
-# skip if empty
-[[ ! -e "$file" ]] && continue
-link_source="$HOME/${file#*./}"
-link_target="$plugin_dir/${file#*./}"
-if [[ -d "$file" ]]; then
-	mkdir -p "$link_source"
+materialized_directories=(
+	".pi/agent"
+	".pi/agent/themes"
+)
 
-	find "$file/" -maxdepth 1 -mindepth 1 -print0 \
-		| while IFS= read -r -d '' file; do
-	# skip if empty
-	[[ ! -e "$file" ]] && continue
-	link_source="$HOME/${file#*./}"
-	link_target="$plugin_dir/${file#*./}"
+should_materialize() {
+	local relative_path="$1"
+	local configured_path
 
-	if [[ -e "$link_source" && ! -h "$link_source" ]]; then
-		fail "skip $link_source"
-		continue
+	[[ "$relative_path" != */* ]] && return 0
+	for configured_path in "${materialized_directories[@]}"; do
+		[[ "$relative_path" == "$configured_path" ]] && return 0
+	done
+	return 1
+}
+
+link_entry() {
+	local source="$1"
+	local relative_path="${source#"${plugin_dir}/"}"
+	local link_path="${HOME}/${relative_path}"
+	local child
+
+	if [[ -d "$source" ]] && should_materialize "$relative_path"; then
+		if [[ -h "$link_path" ]]; then
+			rm "$link_path"
+		elif [[ -e "$link_path" && ! -d "$link_path" ]]; then
+			fail "skip $link_path"
+			return
+		fi
+		mkdir -p "$link_path"
+		while IFS= read -r -d '' child; do
+			link_entry "$child"
+		done < <(find "$source" -mindepth 1 -maxdepth 1 -print0)
+		return
 	fi
 
-	ln -snf "$link_target" "$link_source"
-done
-else
-	link_source="$HOME/${file#*./}"
-	link_target="$plugin_dir/${file#*./}"
-	if [[ -e "$link_source" && ! -h "$link_source" ]]; then
-		fail "skip $link_source"
-		continue
+	if [[ -e "$link_path" && ! -h "$link_path" ]]; then
+		fail "skip $link_path"
+		return
 	fi
 
-	ln -snf "$link_target" "$link_source"
-fi
-done
+	mkdir -p "$(dirname "$link_path")"
+	ln -snf "$source" "$link_path"
+}
 
+while IFS= read -r -d '' entry; do
+	link_entry "$entry"
+done < <(find "$plugin_dir" -mindepth 1 -maxdepth 1 -print0)

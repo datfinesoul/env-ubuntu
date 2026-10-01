@@ -1,0 +1,14 @@
+# Base16 Default Dark — managed by color-theme
+# This preserves the git-delta palette previously defined in ~/.gitconfig.
+[delta]
+	light = false
+	plus-style = "bold white #004400"
+	plus-emph-style = "bold white #006600"
+[delta "unobtrusive-line-numbers"]
+	line-numbers-zero-style = "#444444"
+	line-numbers-left-style = blue
+	line-numbers-right-style = blue
+[delta "decorations"]
+	file-style = white
+	file-decoration-style = ul ol brightcyan
+	hunk-header-decoration-style = grey box

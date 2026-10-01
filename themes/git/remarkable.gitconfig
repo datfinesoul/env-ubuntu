@@ -1,0 +1,16 @@
+# reMarkable Light — managed by color-theme
+# Colors match themes/kitty/remarkable.conf and the Pi remarkable theme.
+[delta]
+	light = true
+	minus-style = "#9c3d34 #e3cfca"
+	minus-emph-style = "bold #9c3d34 #d9b8b1"
+	plus-style = "#377748 #d3dfd2"
+	plus-emph-style = "bold #377748 #bfd2bd"
+[delta "unobtrusive-line-numbers"]
+	line-numbers-zero-style = "#777873"
+	line-numbers-left-style = "#326591"
+	line-numbers-right-style = "#326591"
+[delta "decorations"]
+	file-style = "#292a28"
+	file-decoration-style = "ul ol #006f76"
+	hunk-header-decoration-style = "#686964 box"
