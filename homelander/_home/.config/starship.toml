@@ -5,7 +5,7 @@ add_newline = true
 
 [aws]
 force_display = true
-style = 'dimmed white'
+style = 'blue'
 symbol = '🅰 '
 
 [aws.region_aliases]
