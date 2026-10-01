@@ -79,10 +79,18 @@ function! ClearUndo()
 endfunction
 map <Leader>dU :call ClearUndo()<CR>
 
-" base16 color
-set background=dark
+" Select the Vim palette matching ~/.config/env-ubuntu/color-theme.
+let s:color_theme_file = expand('~/.config/env-ubuntu/color-theme')
+let s:color_theme_lines = filereadable(s:color_theme_file) ? readfile(s:color_theme_file, '', 1) : []
+let s:color_theme = empty(s:color_theme_lines) ? 'default' : s:color_theme_lines[0]
 let base16colorspace=256
-colorscheme base16-default-dark
+if s:color_theme ==# 'remarkable'
+  set background=light
+  colorscheme base16-remarkable-light
+else
+  set background=dark
+  colorscheme base16-default-dark
+endif
 
 set t_Co=256
 
@@ -95,10 +103,15 @@ let g:indent_guides_start_level=1
 let g:indent_guides_enable_on_vim_startup=1
 let g:indent_guides_auto_colors=0
 let g:indent_guides_guide_size=1
-"autocmd VimEnter,Colorscheme * :hi IndentGuidesOdd ctermbg=16 guibg=#000000 "rgb=0,0,0
-"autocmd VimEnter,Colorscheme * :hi IndentGuidesOdd ctermbg=233 guibg=#121212 "rgb=18,18,18
-"autocmd VimEnter,Colorscheme * :hi IndentGuidesEven ctermbg=234 guibg=#1c1c1c "rgb=28,28,28
-autocmd VimEnter,Colorscheme * :hi IndentGuidesEven ctermbg=235 guibg=#262626 "rgb=38,38,38
+augroup color_theme_indent_guides
+  autocmd!
+  if s:color_theme ==# 'remarkable'
+    autocmd VimEnter,ColorScheme * hi IndentGuidesOdd ctermbg=18 guibg=#d8d6cf
+    autocmd VimEnter,ColorScheme * hi IndentGuidesEven ctermbg=19 guibg=#c5c4bd
+  else
+    autocmd VimEnter,ColorScheme * hi IndentGuidesEven ctermbg=235 guibg=#262626
+  endif
+augroup END
 let g:js_indent_log = 0
 
 let g:html_exclude_tags = ['html', 'style', 'script', 'body']

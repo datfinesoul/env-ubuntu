@@ -47,7 +47,7 @@ alias ag='ag --follow --hidden --ignore node_modules/ --ignore .git/ --skip-vcs-
 alias rg='rg --follow --hidden --glob !node_modules/ --glob !.git/ --no-ignore-vcs'
 alias deps='jq "{"prod":.dependencies, "dev":.devDependencies}" package.json'
 
-alias recolor="source $HOME/.config/base16-shell/base16-default.dark.sh"
+alias recolor="color-theme default"
 
 alias k=kubectl
 
@@ -101,4 +101,4 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 alias fixkb='printf "\e[=0u"'
-
+alias pi="pi --tui-mode fullscreen"
