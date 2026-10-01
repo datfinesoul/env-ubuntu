@@ -11,15 +11,22 @@ color_theme() {
   local pi_settings_dir="${HOME}/.pi/agent"
   local pi_settings_file="${pi_settings_dir}/settings.json"
   local pi_settings_tmp="${pi_settings_file}.tmp.$$"
+  local kitty_theme
+  local kitty_theme_file="${config_dir}/kitty-theme.conf"
+  local bat_theme
 
   case "${theme}" in
     default)
       palette="${HOME}/.config/base16-shell/base16-default.dark.sh"
       pi_theme="dark"
+      kitty_theme="${repo_root}/themes/kitty/default.conf"
+      bat_theme="1337"
       ;;
     remarkable)
       palette="${HOME}/.config/base16-shell/base16-remarkable.light.sh"
       pi_theme="remarkable"
+      kitty_theme="${repo_root}/themes/kitty/remarkable.conf"
+      bat_theme="ansi"
       ;;
     *)
       printf 'usage: color-theme {default|remarkable}\n' >&2
@@ -33,6 +40,10 @@ color_theme() {
   fi
   if [[ ! -r "${pi_theme_dir}/remarkable.json" ]]; then
     printf 'color-theme: Pi theme not found: %s\n' "${pi_theme_dir}/remarkable.json" >&2
+    return 1
+  fi
+  if [[ ! -r "${kitty_theme}" ]]; then
+    printf 'color-theme: Kitty theme not found: %s\n' "${kitty_theme}" >&2
     return 1
   fi
   if ! command -v jq > /dev/null 2>&1; then
@@ -51,10 +62,12 @@ color_theme() {
     return 1
   fi
   mv "${pi_settings_tmp}" "${pi_settings_file}" || return 1
+  cp "${kitty_theme}" "${kitty_theme_file}" || return 1
   printf '%s\n' "${theme}" > "${config_file}" || return 1
 
   # shellcheck disable=SC1090
   source "${palette}"
-  printf 'Color theme set to %s (Pi: %s). Restart Vim and Pi to apply it everywhere.\n' \
-    "${theme}" "${pi_theme}"
+  export BAT_THEME="${bat_theme}"
+  printf 'Color theme set to %s (Pi: %s, bat: %s). Restart Vim, Pi, and Kitty to apply it everywhere.\n' \
+    "${theme}" "${pi_theme}" "${bat_theme}"
 }

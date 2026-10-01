@@ -52,7 +52,9 @@ alias recolor="color-theme default"
 alias k=kubectl
 
 alias tfver="${HOME}/env-ubuntu/installers/terraform-cli.manual.bash"
-which bat > /dev/null && alias bat='bat --theme 1337' || alias bat='batcat'
+if ! command -v bat > /dev/null && command -v batcat > /dev/null; then
+	alias bat='batcat'
+fi
 
 # AT HOME ONLY
 alias fix_fn="echo 2 | sudo tee /sys/module/hid_apple/parameters/fnmode"
@@ -64,7 +66,9 @@ alias purge="printf '\x1b[2J\x1b[3J\x1b[1;1H'"
 #history + percol - date
 alias hp="history | percol --match-method regex | awk '{\$1=\$2=\$3=\"\"; print \$0;}'"
 alias bu='brew update; brew upgrade; brew cleanup; brew doctor && brew cask upgrade; brew cask doctor'
-alias bat &> /dev/null && alias cat='bat -pp'
+if command -v bat > /dev/null || alias bat > /dev/null 2>&1; then
+	alias cat='bat -pp'
+fi
 alias sso='export AWS_PROFILE=$(sed -n "s/\[profile \(.*\)\]/\1/gp" ~/.aws/config | fzf)'
 alias iambic="docker run -it --rm -u $(id -u):$(id -g) \
 	-e AWS_CONFIG_FILE=/app/.aws/config \
