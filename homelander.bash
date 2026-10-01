@@ -23,6 +23,8 @@ if [[ -z "${target}" ]]; then
 fi
 
 info "homelander starting"
+# Ensure a first-run target exists before trying to remove managed sections.
+touch "${target}"
 # remove all the previously added entries
 sed -i '/^#[+]:[^:]\+:$/,/^#[-]:[^:]\+:$/d' "$target"
 # add things back
@@ -34,7 +36,6 @@ find "${plugin_dir}" -type f -name "*.bash" -print0 \
 	# remove the last .bash from the file name
 	label="$(basename "${file%.bash*}")"
 	# remove section ( eg. #[+-]:somefile: )
-	touch "${target}"
 	# add the section back
 	{
 		echo "#+:${label}:"

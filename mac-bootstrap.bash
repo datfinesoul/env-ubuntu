@@ -29,7 +29,7 @@ chsh -s /opt/homebrew/bin/bash
 sudo chsh -s /opt/homebrew/bin/bash
 touch ~/.bash_sessions_disable
 
-mkdir "${HOME}/Library/KeyBindings/"
+mkdir -p "${HOME}/Library/KeyBindings/"
 echo '{
     "\UF729"   = "moveToBeginningOfLine:";
     "\UF72B"   = "moveToEndOfLine:";
