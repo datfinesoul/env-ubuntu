@@ -1,11 +1,12 @@
 {
-  "lastChangelogVersion": "0.99.2",
+  "lastChangelogVersion": "1.0.4",
   "theme": "remarkable",
   "defaultProvider": "github-copilot",
-  "defaultModel": "gpt-5.6-sol",
+  "defaultModel": "gpt-6.1-sol",
   "enabledModels": [
-    "github-copilot/gpt-5.6-luna",
-    "github-copilot/gpt-5.6-sol"
+    "github-copilot/gpt-6.1-sol",
+    "github-copilot/claude-opus-5.5",
+    "github-copilot/gpt-6-luna"
   ],
   "hideThinkingBlock": true,
   "tuiMode": "fullscreen",
@@ -13,9 +14,18 @@
     "github-copilot/gpt-5.6-luna": "max",
     "github-copilot/gpt-5.6-sol": "low",
     "github-copilot/gpt-6-luna": "max",
-    "github-copilot/gpt-6-sol": "low"
+    "github-copilot/gpt-6-sol": "low",
+    "github-copilot/gpt-6.1-sol": "low",
+    "github-copilot/claude-opus-5.5": "medium"
   },
   "treeFilterMode": "default",
   "showCacheMissNotices": true,
-  "packages": []
+  "packages": [
+    "git:github.com/datfinesoul/pi-prompt-filter",
+    "git:github.com/datfinesoul/pi-prompt-snippets"
+  ],
+  "outputPad": 0,
+  "markdown": {
+    "codeBlockIndent": ""
+  }
 }
