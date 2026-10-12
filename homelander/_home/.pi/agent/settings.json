@@ -1,22 +1,16 @@
 {
-  "lastChangelogVersion": "1.4.0",
+  "lastChangelogVersion": "1.1.0",
   "theme": "remarkable",
-  "defaultProvider": "github-copilot",
-  "defaultModel": "gpt-6.1-sol",
+  "defaultProvider": "opencode-go",
+  "defaultModel": "opencode-go/mimo-v2.5",
   "enabledModels": [
-    "github-copilot/gpt-6.1-sol",
-    "github-copilot/claude-opus-5.5",
-    "github-copilot/gpt-6-luna"
+    "opencode-go/mimo-v2.5",
+    "opencode-go/deepseek-v4.1-flash"
   ],
   "hideThinkingBlock": true,
   "tuiMode": "fullscreen",
   "modelThinkingLevels": {
-    "github-copilot/gpt-5.6-luna": "max",
-    "github-copilot/gpt-5.6-sol": "low",
-    "github-copilot/gpt-6-luna": "max",
-    "github-copilot/gpt-6-sol": "low",
-    "github-copilot/gpt-6.1-sol": "low",
-    "github-copilot/claude-opus-5.5": "medium"
+    "opencode-go/mimo-v2.5": "medium"
   },
   "treeFilterMode": "default",
   "showCacheMissNotices": true,
@@ -28,6 +22,7 @@
     "npm:@grafana/agento11y-pi",
     "git:github.com/datfinesoul/pi-watch"
   ],
+  "npmCommand": ["pnpm"],
   "outputPad": 0,
   "markdown": {
     "codeBlockIndent": ""
