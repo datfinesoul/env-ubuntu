@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.0.4",
+  "lastChangelogVersion": "1.3.0",
   "theme": "remarkable",
   "defaultProvider": "github-copilot",
   "defaultModel": "gpt-6.1-sol",
@@ -22,7 +22,9 @@
   "showCacheMissNotices": true,
   "packages": [
     "git:github.com/datfinesoul/pi-prompt-filter",
-    "git:github.com/datfinesoul/pi-prompt-snippets"
+    "git:github.com/datfinesoul/pi-prompt-snippets",
+    "git:github.com/datfinesoul/pi-code-block-copy",
+    "git:github.com/datfinesoul/pi-aws-assume"
   ],
   "outputPad": 0,
   "markdown": {
