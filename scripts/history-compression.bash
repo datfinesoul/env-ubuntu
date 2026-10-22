@@ -27,13 +27,17 @@ if ! $dry_run; then
   trap 'rm -f "$tmp"' EXIT
 fi
 
-# Collapse duplicates; keep latest timestamp per surviving line
+# Collapse duplicates; keep each command's last occurrence and timestamp in file order.
 awk '
 /^#/ { ts=$0; next }
-!seen[$0]++ { first_ts[$0]=ts; order[++n]=$0 }
-{ last_ts[$0]=ts }
+{ order[++n]=$0; last_index[$0]=n; last_ts[$0]=ts }
 END {
-  for (i=1; i<=n; i++) { print last_ts[order[i]]; print order[i] }
+  for (i=1; i<=n; i++) {
+    if (last_index[order[i]] == i) {
+      print last_ts[order[i]]
+      print order[i]
+    }
+  }
 }
 ' "$histfile" > "$tmp"
 

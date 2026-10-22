@@ -1,5 +1,6 @@
 bash-completion@2
 bat
+flock
 fzf
 gh
 gpg2
