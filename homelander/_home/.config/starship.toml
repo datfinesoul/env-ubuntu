@@ -2,6 +2,8 @@
 # https://starship.rs/config/#prompt
 
 add_newline = true
+# Trial: keep the custom directory module at the normal directory position.
+format = "$username$hostname$localip$shlvl$singularity$kubernetes$nats${custom.super_root}${custom.repo_path}\n$all"
 
 [aws]
 force_display = true
@@ -65,7 +67,22 @@ style = 'bright-blue'
 #command = 'readlink $(which terraform) | awk -F "_" "NF > 1 {print $NF}"'
 #detect_extensions = ['tf', 'tfplan', 'tfstate']
 
+[custom.super_root]
+command = 'bash "${ENV_UBUNTU_ROOT:-$HOME/github/datfinesoul/env-ubuntu}/scripts/starship-repo-path.bash" super-root'
+when = true
+shell = ['sh']
+style = 'bold cyan'
+format = '[$output]($style)'
+
+[custom.repo_path]
+command = 'bash "${ENV_UBUNTU_ROOT:-$HOME/github/datfinesoul/env-ubuntu}/scripts/starship-repo-path.bash"'
+when = true
+shell = ['sh']
+style = 'yellow'
+format = '[$output]($style)'
+
 [directory]
+disabled = true
 format = "[$path]($style)[$read_only]($read_only_style)\n"
 truncate_to_repo = false
 style= 'yellow'
