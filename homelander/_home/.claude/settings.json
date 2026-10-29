@@ -25,10 +25,9 @@
       "Bash(git commit:*)"
     ]
   },
-  "model": "opus[1m]",
   "alwaysThinkingEnabled": true,
   "effortLevel": "low",
   "tui": "fullscreen",
-  "theme": "dark-daltonized",
+  "theme": "light-ansi",
   "autoCompactEnabled": false
 }

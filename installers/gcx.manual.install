@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/_core.bash"
+
+case "${kernel_name}" in
+	Darwin) release_os='darwin' ;;
+	Linux) release_os='linux' ;;
+	*) fail "unsupported operating system: ${kernel_name}"; exit 1 ;;
+esac
+
+case "${machine}" in
+	x86_64|arm64|aarch64) ;;
+	*) fail "unsupported architecture: ${machine}"; exit 1 ;;
+esac
+
+### MODIFY: START
+repo='grafana/gcx'
+pattern="_${release_os}_${architecture}\\.tar\\.gz$"
+### MODIFY: END
+
+releases="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest")"
+
+read -r version url <<< "$(
+	printf '%s\n' "${releases}" \
+		| jq --arg pattern "${pattern}" \
+		-r '[.tag_name, (.assets[].browser_download_url | select(test($pattern)))] | @tsv'
+)"
+
+debug "version:${version}"
+debug "url:${url}"
+
+if [[ -z "${url}" ]]; then
+	fail "unable to find match, displaying all files for debugging"
+	printf '%s\n' "${releases}" | jq -r '.assets[].browser_download_url'
+	exit 1
+fi
+
+downloaded_file="${url##*/}"
+executable="${repo##*/}"
+versioned_exe="${executable}_${version}"
+target_dir="${HOME}/.local/${executable}"
+bin_dir="${HOME}/.local/bin"
+
+curl -fL -o "${downloaded_file}" "${url}"
+tar -xzf "${downloaded_file}" "${executable}"
+
+mkdir -p "${target_dir}" "${bin_dir}"
+mv "${executable}" "${target_dir}/${versioned_exe}"
+chmod 755 "${target_dir}/${versioned_exe}"
+ln -sf "${target_dir}/${versioned_exe}" "${bin_dir}/${executable}"
+
+info "${executable} ${version} installed"
+
+# vim: set ft=bash :

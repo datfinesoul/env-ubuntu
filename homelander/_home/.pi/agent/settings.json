@@ -24,7 +24,9 @@
     "git:github.com/datfinesoul/pi-prompt-filter",
     "git:github.com/datfinesoul/pi-prompt-snippets",
     "git:github.com/datfinesoul/pi-code-block-copy",
-    "git:github.com/datfinesoul/pi-aws-assume"
+    "git:github.com/datfinesoul/pi-aws-assume",
+    "npm:@grafana/agento11y-pi",
+    "git:github.com/datfinesoul/pi-watch"
   ],
   "outputPad": 0,
   "markdown": {
