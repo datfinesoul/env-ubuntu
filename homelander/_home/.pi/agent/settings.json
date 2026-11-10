@@ -1,16 +1,17 @@
 {
-  "lastChangelogVersion": "1.1.0",
+  "lastChangelogVersion": "1.5.2",
   "theme": "remarkable",
   "defaultProvider": "opencode-go",
-  "defaultModel": "opencode-go/mimo-v2.5",
+  "defaultModel": "opencode-go/mimo-v2.6-flash",
   "enabledModels": [
-    "opencode-go/mimo-v2.5",
-    "opencode-go/deepseek-v4.1-flash"
+    "opencode-go/mimo-v2.6-flash",
+    "opencode-go/deepseek-v4.1-flash",
+    "opencode-go/glm-5.3-flash"
   ],
   "hideThinkingBlock": true,
   "tuiMode": "fullscreen",
   "modelThinkingLevels": {
-    "opencode-go/mimo-v2.5": "medium"
+    "opencode-go/mimo-v2.6-flash": "medium"
   },
   "treeFilterMode": "default",
   "showCacheMissNotices": true,
@@ -19,12 +20,27 @@
     "git:github.com/datfinesoul/pi-prompt-snippets",
     "git:github.com/datfinesoul/pi-code-block-copy",
     "git:github.com/datfinesoul/pi-aws-assume",
-    "npm:@grafana/agento11y-pi",
-    "git:github.com/datfinesoul/pi-watch"
+    "git:github.com/datfinesoul/pi-watch",
+    "git:github.com/datfinesoul/pi-questions"
   ],
-  "npmCommand": ["pnpm"],
+  "npmCommand": [
+    "pnpm"
+  ],
   "outputPad": 0,
   "markdown": {
     "codeBlockIndent": ""
+  },
+  "extensionChangelogVersions": {
+    "{\"source\":\"../pi-watch\",\"scope\":\"project\"}": "0.7.0",
+    "{\"source\":\"../pi-aws-assume\",\"scope\":\"project\"}": "0.4.1",
+    "{\"source\":\"../pi-prompt-filter\",\"scope\":\"project\"}": "0.3.1",
+    "{\"source\":\"../pi-prompt-snippets\",\"scope\":\"project\"}": "0.4.0",
+    "{\"source\":\"../pi-code-block-copy\",\"scope\":\"project\"}": "0.5.1",
+    "{\"source\":\"git:github.com/datfinesoul/pi-prompt-filter\",\"scope\":\"user\"}": "0.3.1",
+    "{\"source\":\"git:github.com/datfinesoul/pi-prompt-snippets\",\"scope\":\"user\"}": "0.4.0",
+    "{\"source\":\"git:github.com/datfinesoul/pi-code-block-copy\",\"scope\":\"user\"}": "0.5.1",
+    "{\"source\":\"git:github.com/datfinesoul/pi-aws-assume\",\"scope\":\"user\"}": "0.4.1",
+    "{\"source\":\"git:github.com/datfinesoul/pi-watch\",\"scope\":\"user\"}": "0.5.1",
+    "{\"source\":\"../pi-questions\",\"scope\":\"project\"}": "0.1.1"
   }
 }
