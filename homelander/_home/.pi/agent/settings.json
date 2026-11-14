@@ -2,10 +2,10 @@
   "lastChangelogVersion": "1.5.2",
   "theme": "remarkable",
   "defaultProvider": "opencode-go",
-  "defaultModel": "opencode-go/deepseek-v4.1-flash",
+  "defaultModel": "deepseek-v4.1-flash",
   "enabledModels": [
-    "opencode-go/mimo-v2.6-flash",
     "opencode-go/deepseek-v4.1-flash",
+    "opencode-go/mimo-v2.6-flash",
     "opencode-go/glm-5.3-flash"
   ],
   "hideThinkingBlock": true,
@@ -43,7 +43,7 @@
     "{\"source\":\"git:github.com/datfinesoul/pi-code-block-copy\",\"scope\":\"user\"}": "0.6.0",
     "{\"source\":\"git:github.com/datfinesoul/pi-aws-assume\",\"scope\":\"user\"}": "0.4.1",
     "{\"source\":\"git:github.com/datfinesoul/pi-watch\",\"scope\":\"user\"}": "0.6.0",
-    "{\"source\":\"../pi-questions\",\"scope\":\"project\"}": "0.2.0",
+    "{\"source\":\"../pi-questions\",\"scope\":\"project\"}": "0.3.0",
     "{\"source\":\"git:github.com/datfinesoul/pi-questions\",\"scope\":\"user\"}": "0.2.0"
   }
 }
