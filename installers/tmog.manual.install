@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/_core.bash"
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+	>&2 echo 'No Darwin Install'
+	exit 1
+fi
+
+# AppImage requires FUSE
+if ! dpkg -l libfuse2 &>/dev/null; then
+	info "Installing libfuse2 (required for AppImage)"
+	sudo apt-get install -y libfuse2
+fi
+
+### MODIFY: START
+site='https://tmog.org'
+# The download page lists the current release, so read the file name from it
+if [[ "${architecture}" == "arm64" ]]; then
+	appimage_arch='aarch64'
+else
+	appimage_arch='x86_64'
+fi
+pattern="/downloads/TaskManagerOG-[0-9.]+-${appimage_arch}[.]AppImage"
+### MODIFY: END
+
+page="$(curl -sSL "${site}/")"
+
+path="$(
+	printf "%s\n" "${page}" \
+	| grep -m1 -oE "${pattern}"
+)"
+
+debug "path:${path}"
+
+if [[ -z "${path}" ]]; then
+	fail "unable to find match, displaying all download links for debugging"
+	printf "%s\n" "${page}" | grep -oE '/downloads/[^"]*'
+	exit 1
+fi
+
+version="$(printf "%s\n" "${path}" | sed -E 's|.*/TaskManagerOG-(.*)-[^-]+[.]AppImage|\1|')"
+url="${site}${path}"
+
+executable='tmog'
+versioned_exe="${executable}_${version}"
+
+debug "version:${version}"
+debug "url:${url}"
+debug "executable:${executable}"
+debug "versioned_exe:${versioned_exe}"
+
+curl -L -o "$executable" "$url"
+chmod 755 "$executable"
+
+target_dir="${HOME}/.local/${executable}"
+bin_dir="${HOME}/.local/bin"
+
+mkdir -p "${target_dir}"
+mkdir -p "${bin_dir}"
+
+mv "${executable}" "${target_dir}/${versioned_exe}"
+
+# Extract icon from AppImage
+icon_dir="${HOME}/.local/share/icons"
+mkdir -p "${icon_dir}"
+icon_path="${icon_dir}/${executable}.png"
+
+# AppImages can be extracted with --appimage-extract
+# Extract to temp directory, find the icon, then clean up
+extract_dir=$(mktemp -d)
+pushd "${extract_dir}" > /dev/null
+"${target_dir}/${versioned_exe}" --appimage-extract > /dev/null 2>&1 || true
+# Look for icon in common locations within extracted AppImage
+if [[ -f "squashfs-root/tmog-task-manager.png" ]]; then
+	cp "squashfs-root/tmog-task-manager.png" "${icon_path}"
+elif [[ -f "squashfs-root/.DirIcon" ]]; then
+	cp "squashfs-root/.DirIcon" "${icon_path}"
+elif [[ -f "squashfs-root/usr/share/pixmaps/tmog-task-manager.png" ]]; then
+	cp "squashfs-root/usr/share/pixmaps/tmog-task-manager.png" "${icon_path}"
+elif [[ -f "squashfs-root/usr/share/icons/hicolor/512x512/apps/tmog-task-manager.png" ]]; then
+	cp "squashfs-root/usr/share/icons/hicolor/512x512/apps/tmog-task-manager.png" "${icon_path}"
+elif [[ -f "squashfs-root/usr/share/icons/hicolor/256x256/apps/tmog-task-manager.png" ]]; then
+	cp "squashfs-root/usr/share/icons/hicolor/256x256/apps/tmog-task-manager.png" "${icon_path}"
+else
+	# Find any png that might be the icon
+	find squashfs-root -maxdepth 2 -name "*.png" -type f | head -1 | xargs -I{} cp {} "${icon_path}" 2>/dev/null || true
+fi
+popd > /dev/null
+rm -rf "${extract_dir}"
+
+debug "icon_path:${icon_path}"
+
+# AppImage stuff
+cat > "${bin_dir}/${executable}" <<-DOC
+#!/bin/bash
+exec "${target_dir}/${versioned_exe}" "\$@"
+DOC
+chmod 755 "${bin_dir}/${executable}"
+
+# Create desktop entry
+apps_dir="${HOME}/.local/share/applications"
+mkdir -p "${apps_dir}"
+
+cat > "${apps_dir}/${executable}.desktop" <<-DOC
+[Desktop Entry]
+Type=Application
+Name=Task Manager TMOG
+Comment=Native system monitor and task manager
+Exec=${bin_dir}/${executable}
+Icon=${icon_path}
+Terminal=false
+Categories=System;Monitor;
+StartupWMClass=Task Manager TMOG
+DOC
+
+update-desktop-database "${apps_dir}"
+gtk-update-icon-cache -f -t "$HOME/.local/share/icons" 2>/dev/null || true
+
+# vim: set ft=bash :
