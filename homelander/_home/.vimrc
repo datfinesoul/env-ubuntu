@@ -80,9 +80,49 @@ endfunction
 map <Leader>dU :call ClearUndo()<CR>
 
 " Select the Vim palette matching ~/.config/env-ubuntu/color-theme.
-let s:color_theme_file = expand('~/.config/env-ubuntu/color-theme')
-let s:color_theme_lines = filereadable(s:color_theme_file) ? readfile(s:color_theme_file, '', 1) : []
-let s:color_theme = empty(s:color_theme_lines) ? 'default' : s:color_theme_lines[0]
+function! s:ReadColorTheme()
+  let l:file = expand('~/.config/env-ubuntu/color-theme')
+  let l:lines = filereadable(l:file) ? readfile(l:file, '', 1) : []
+  return empty(l:lines) ? 'default' : l:lines[0]
+endfunction
+let s:color_theme = s:ReadColorTheme()
+
+" kitty reloads (kitty @ set-colors) and color-theme switches can change the
+" terminal palette under a running Vim, which cannot detect palette changes.
+" Re-derive the theme from the same file color-theme writes whenever Vim
+" regains focus, so a reload heals itself when you click back into the window.
+function! s:SyncTerminalTheme()
+  let l:theme = s:ReadColorTheme()
+  if l:theme ==# 'remarkable'
+    set background=light
+    exec 'colorscheme base16-remarkable-light'
+    " Airline's fallback error/warning sections are bright red/orange blocks
+    " (#990000/#df5f00); mute them to the remarkable palette.
+    if exists('g:airline#themes#dark#palette')
+      let l:p = g:airline#themes#dark#palette
+      for l:mode in ['normal', 'normal_modified', 'insert', 'insert_modified',
+            \ 'replace', 'replace_modified', 'visual', 'visual_modified',
+            \ 'inactive', 'inactive_modified']
+        if has_key(l:p, l:mode) && type(l:p[l:mode]) == type({})
+          if has_key(l:p[l:mode], 'airline_error')
+            let l:p[l:mode].airline_error = ['#9c3d34', '#e3e1da', '', '']
+          endif
+          if has_key(l:p[l:mode], 'airline_warning')
+            let l:p[l:mode].airline_warning = ['#956600', '#e3e1da', '', '']
+          endif
+        endif
+      endfor
+    endif
+  else
+    set background=dark
+    exec 'colorscheme base16-default-dark'
+  endif
+  " exec'ing colorscheme does hi clear, which wipes airline's highlights; it
+  " would otherwise stay wrong until airline's next redraw event.
+  if exists(':AirlineRefresh') | exec 'AirlineRefresh' | endif
+  redraw!
+endfunction
+autocmd FocusGained * call s:SyncTerminalTheme()
 let base16colorspace=256
 if s:color_theme ==# 'remarkable'
   set background=light
@@ -93,6 +133,15 @@ else
 endif
 
 set t_Co=256
+" kitty supports truecolor: use exact theme hex values instead of 256-color
+" approximations (this palette has no bright colors, so cterm 15 is dark ink).
+if has('termguicolors')
+  set termguicolors
+endif
+
+" Startup uses the same sync logic so there is one code path.
+" (Airline keeps its stock 'dark' theme, as before.)
+autocmd VimEnter * call s:SyncTerminalTheme()
 
 " helps activete vim-airline
 set laststatus=2
