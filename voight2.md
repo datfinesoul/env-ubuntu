@@ -2,6 +2,9 @@
 
 Status: discussion draft. Supersedes `voight.md`; no implementation yet.
 
+Claude Code is being retired. `.claude` is treated as legacy and removed, not
+migrated.
+
 This version keeps every finding and decision from `voight.md`, then adds the
 machine-to-machine configuration problem found by comparing this branch with
 `main`. The short version: the current system mostly uses one mechanism —
@@ -75,7 +78,7 @@ Examples from this machine:
 
 ```text
 ~/.pi/agent/settings.json   -> repo/homelander/_home/.pi/agent/settings.json
-~/.claude/settings.json     -> repo/homelander/_home/.claude/settings.json
+~/.claude/settings.json     -> repo/homelander/_home/.claude/settings.json  (legacy; remove)
 ~/.gitconfig                -> repo/homelander/_home/.gitconfig
 ~/.config/kitty             -> repo/homelander/_home/.config/kitty
 ~/.vim/pack                 -> repo/homelander/_home/.vim/pack
@@ -88,17 +91,19 @@ Mixed directories are more complicated:
                             coexist with linked settings/theme files
 ~/.config/env-ubuntu/       real dir (materialized); generated theme files
                             coexist with linked repo files
-~/.claude/                  real dir with app state AND managed links
+~/.claude/                  legacy; real dir with app state AND managed links
 ~/.vim/                     real dir with app state AND managed links
 ~/.prompts/                 legacy materialized dir with a managed file link
 ```
 
-`~/.claude` and `~/.vim` are important: they contain local app state
-(`.credentials.json`, `history.jsonl`, `sessions/`, `.netrwhist`, etc.) plus
-managed symlinks. `is_managed_container` rejects them because of the local
-files, so `homelinker` logs `skip` and stops deploying new managed entries into
-those directories. The explicit `materialized_directories` list works, but it is
-reactive and easy to forget.
+`~/.vim` is important: it contains local app state (`.netrwhist`) plus managed
+symlinks. `is_managed_container` rejects it because of the local file, so
+`homelinker` logs `skip` and stops deploying new managed entries. The explicit
+`materialized_directories` list works, but it is reactive and easy to forget.
+
+`~/.claude` is the same pattern, but it is being retired. Do not add it to
+`materialized_directories`; remove the managed links and the tracked files
+instead.
 
 ### 1.5 Key facts from history
 
@@ -122,7 +127,7 @@ reactive and easy to forget.
    version controlled.
 2. **Whole directories** (e.g., `.vim/pack/`) — symlink the entire directory,
    fully version controlled.
-3. **Mixed directories** (e.g., `~/.config/opencode/`, `~/.claude/`) — some
+3. **Mixed directories** (e.g., `~/.config/opencode/`, `~/.vim/`) — some
    files are managed and versioned, the rest are local app state. Currently
    underserved because the materialized-directory list is manual and because
    any local file blocks a whole-directory link.
@@ -133,7 +138,7 @@ reactive and easy to forget.
 5. **Machine-variant whole files** — the entire file is different per machine
    (e.g., a global AWS role library).
 6. **Machine-variant structured files** — most keys are shared, a few are
-   machine-specific (e.g., Pi provider/model list, Claude hooks).
+   machine-specific (e.g., Pi provider/model list).
 7. **App-rewritten managed files** — the app writes to the same file that git
    manages (e.g., `settings.json`, changelog versions, Orca hooks).
 8. **Generated local artifacts** — a script generates a file from a tracked
@@ -144,8 +149,7 @@ reactive and easy to forget.
     model, effort level). It should survive a re-render but does not need to be
     shared.
 11. **Project-scoped configuration** — config that belongs to a project, not to
-    `$HOME` (`.pi/aws-assume.json`, `.pi/settings.json`,
-    `.claude/settings.local.json`).
+    `$HOME` (`.pi/aws-assume.json`, `.pi/settings.json`).
 12. **Secrets** — credentials, tokens, keys, profile names that must not be
     public. Never tracked, never rendered from the repo.
 
@@ -182,21 +186,14 @@ Two important details:
 - `theme` is also written by the `color-theme` shell function. It is a local
   preference, not a shared setting.
 
-### 3.2 Claude settings (`~/.claude/settings.json`)
+### 3.2 Claude settings (legacy, to remove)
 
-Also a symlink into the repo. Comparing `main` with this branch:
+`~/.claude/settings.json` is also a symlink into the repo. It shows the same
+machine/runtime pattern: Orca hooks and a status line on one branch, a different
+model and theme on another, and a tracked `settings.json.bak`.
 
-| Key | `main` | this branch | Likely class |
-| - | - | - | - |
-| `model` | `opus[1m]` | absent | local preference |
-| `theme` | `dark-daltonized` | `light-ansi` | local preference |
-| `hooks` | absent | large Orca hook set for Windows/macOS/Linux | machine / app-managed |
-| `statusLine` | absent | present | machine / app-managed |
-| `permissions`, `env`, `includeCoAuthoredBy`, `cleanupPeriodDays`, `autoCompactEnabled` | present | present | shared |
-| `settings.json.bak` | tracked | tracked | runtime |
-
-The Orca hook commands are generated by an app. Hand-maintaining them in this
-repo is the wrong layer unless we explicitly decide they are machine config.
+This is evidence of the problem, not a file to migrate. Claude Code is retired,
+so `.claude` is a removal problem. See section 6.7.
 
 ### 3.3 Git config (`~/.gitconfig`)
 
@@ -261,7 +258,7 @@ Some are feature work that should merge to `main` and be shared:
 Others are genuinely machine-specific:
 
 - Pi provider/model/package choices
-- Claude Orca hooks and status line
+- Claude Orca hooks and status line (legacy; remove, not migrate)
 - Git absolute paths
 - Theme outputs and local preferences
 
@@ -293,9 +290,9 @@ duplicate it forever and hide it from other machines.
 5. **There is no inventory.** Nothing declares which paths are linked, rendered,
    generated, or ignored. The behavior is spread across `homelinker.bash`,
    `homelander.bash`, `bootstrap.bash`, `.gitignore`, and convention.
-6. **Mixed directories are handled by a manual allowlist.** `~/.claude` and
-   `~/.vim` already demonstrate what happens when the list is incomplete:
-   the whole directory is skipped.
+6. **Mixed directories are handled by a manual allowlist.** `~/.vim` already
+   demonstrates what happens when the list is incomplete: the whole directory
+   is skipped. `~/.claude` had the same problem, but it is being removed.
 7. **Absolute paths leak into shared files.** `/Users/phadviger` and
    `/home/philip.hadviger` cannot be shared.
 8. **Partial solutions exist but are not generalized.** `materialized_directories`,
@@ -340,7 +337,7 @@ duplicate it forever and hide it from other machines.
 | Layer | Owner | Examples | Deployment |
 | - | - | - | - |
 | Shared | repo | `.vimrc`, `.bashrc` snippets, base16, shared packages | link or assemble |
-| Machine | repo machine profile | Pi provider/model list, Claude Orca hooks, work git identity | overlay-link or JSON patch |
+| Machine | repo machine profile | Pi provider/model list, work git identity | overlay-link or JSON patch |
 | Local/runtime | user, app, tools | theme choice, auth, sessions, changelog versions, generated palettes | preserve or ignore |
 
 The repo tracks only the first two. The third is either ignored or preserved
@@ -368,13 +365,11 @@ homelander/
     .vimrc
   _render/                            # shared mutable bases -> render, never link
     .pi/agent/settings.json
-    .claude/settings.json
   _machines/
     work-linux/
       _home/                          # machine immutable overlay -> link after shared
       _patch/                         # machine JSON patches over _render
         .pi/agent/settings.json
-        .claude/settings.json
     home-linux/
       ...
     work-mac/
@@ -398,6 +393,8 @@ Rules:
 - If a machine overlay needs to add a file inside a shared directory, that
   directory must be materialized. The orchestrator should compute this from the
   union of shared and machine paths, not from a hand-maintained list.
+
+Claude Code is absent by design. `.claude` is retired; see section 6.7.
 
 ### 6.4 Machine identity
 
@@ -472,19 +469,22 @@ package change, run a `capture`/`diff` command to update the base or machine
 patch. Without that, the live change is local only. That is preferable to
 committing app state by accident.
 
-### 6.7 Claude settings proposal
+### 6.7 Claude Code removal
 
-| Key(s) | Class | Handling |
-| - | - | - |
-| `permissions`, `env`, `includeCoAuthoredBy`, `cleanupPeriodDays`, `autoCompactEnabled` | shared | `_render/.claude/settings.json` |
-| `hooks`, `statusLine` | machine / app-managed | machine patch only if the repo is the source of truth; otherwise leave app-owned |
-| `model`, `theme`, `effortLevel`, `tui` | local preference / machine | machine patch or local only |
-| `settings.json.bak` | runtime | remove from tracking; gitignore |
+Claude Code is retired, so `.claude` is not migrated. Removal steps:
 
-Orca writes hooks into `settings.json`. If Orca is the source of truth, do not
-manage `hooks` at all: the render merge preserves keys that are absent from
-base/patch. If the repo must manage them, put the full hook object in the
-machine patch and re-render after Orca updates.
+- Remove `homelander/_home/.claude/` from the repo.
+- Remove the live symlinks `~/.claude/CLAUDE.md` and `~/.claude/settings.json`.
+- Do not add `~/.claude` to `materialized_directories`.
+- Remove `.claude/settings.local.json` from the repo if no project uses it.
+- Audit the remaining Claude Code artifacts: `CLAUDE.md` files,
+  `installers/claude.manual.bash`, `functions/claude-p.bash`,
+  `functions/ccode.bash`, and any documentation or branch references.
+- Decide whether to delete local app data (`~/.claude/.credentials.json`,
+  history, sessions, projects) or leave it untouched.
+
+This removal is independent of the render work. It can happen first and removes
+one of the most complicated mutable files from the migration.
 
 ### 6.8 Git config proposal
 
@@ -553,19 +553,20 @@ work identities, and signing keys in `.gitconfig.local` or an
 | `~/.pi/agent/themes/` | materialized links | shared | immutable shared | keep |
 | `~/.pi/agent/aws-assume.json` | untracked | machine security rules | machine local | keep local or seed from machine profile |
 | `~/.pi/agent/auth.json`, `models-store.json`, `trust.json`, `sessions/`, `git/`, `extensions/` | untracked | runtime | runtime | ignore |
-| `~/.claude/CLAUDE.md` | symlink in mixed dir | shared | immutable shared | materialize `.claude`; keep link |
-| `~/.claude/settings.json` | symlink in mixed dir | shared + machine + local | mutable structured | render; no symlink; materialize `.claude` |
-| `~/.claude/settings.json.bak` | tracked | runtime backup | runtime | remove from tracking; gitignore |
-| `~/.claude/.credentials.json`, history, sessions, projects | untracked | runtime/secret | runtime/secret | ignore |
+| `~/.claude/CLAUDE.md` | symlink in mixed dir | legacy | remove | unlink; remove from repo |
+| `~/.claude/settings.json` | symlink in mixed dir | legacy | remove | unlink; remove from repo |
+| `~/.claude/settings.json.bak` | tracked | legacy backup | remove | remove from tracking; gitignore |
+| `~/.claude/.credentials.json`, history, sessions, projects | untracked local app data | legacy/secret | leave or delete | decide after backup; never track |
 | `~/.terraformrc` | symlink | shared | immutable shared | keep |
 | `~/.prompts/` | real dir with managed link (legacy) | shared | immutable shared | let the migration collapse it, or materialize it |
 | `~/.local/run/kitty/pi-watch` | untracked socket | runtime | runtime | ignore |
-| project `.pi/aws-assume.json`, `.pi/settings.json`, `.claude/settings.local.json` | per-project | project scope | project config | keep in each project; not home-managed |
+| project `.pi/aws-assume.json`, `.pi/settings.json` | per-project | project scope | project config | keep in each project; not home-managed |
+| project `.claude/settings.local.json` | tracked project config | legacy | remove | remove if no project uses Claude Code |
 
-Immediate stopgap while the redesign is pending: add `.claude` and `.vim` to
-`materialized_directories`, and remove `settings.json.bak` from tracking. This
-does not solve machine variation, but it stops new managed files from being
-silently skipped.
+Immediate stopgap while the redesign is pending: add `.vim` to
+`materialized_directories`. Do not add `.claude`; remove its managed links and
+tracked files instead. This does not solve machine variation, but it stops new
+managed files from being silently skipped in the directories that remain.
 
 ---
 
@@ -683,6 +684,8 @@ Use a hybrid:
   scripts; never delete unrecognized local state; support dry-run.
 - **D14: Test with a temporary `$HOME` and fixture machines.** No test writes to
   the real home directory.
+- **D15: Claude Code is retired.** `.claude` is removed, not rendered or
+  materialized. Repo-level Claude artifacts are audited separately.
 
 These are proposals. The open questions below decide the details.
 
@@ -720,8 +723,12 @@ These are proposals. The open questions below decide the details.
   `hooks`)? How do we delete a managed key?
 - [ ] **Pi managed keys**: which keys are managed versus local? Is `theme` owned
   by `color-theme` only? Are `packages` shared or per-machine?
-- [ ] **Claude managed keys**: are Orca hooks repo config, machine config, or
-  app runtime? Should `model`/`theme` be managed at all?
+- [ ] **Claude removal scope**: remove only the `~/.claude` managed links and
+  the home `.claude` tree, or also remove repo-level Claude artifacts
+  (`CLAUDE.md`, `installers/claude.manual.bash`, `functions/claude-p.bash`,
+  `functions/ccode.bash`, `.claude/settings.local.json`)?
+- [ ] **Claude local data**: delete `~/.claude` app data (credentials, history,
+  sessions, projects), or leave it untouched after unlinking managed files?
 - [ ] **AWS Assume global file**: track it, seed it from a machine profile, or
   leave it local forever? Are profile names sensitive? Which projects get
   policies?
@@ -794,14 +801,27 @@ To be refined after the open questions, but the current goals are:
 - Fail clearly when the profile is missing; do not guess.
 - Write the selected machine to `~/.config/env-ubuntu/machine` on success.
 
-### Phase 2: Git config (low risk, immediate win)
+### Phase 2: Retire Claude Code
+
+- Remove `homelander/_home/.claude/` from the repo.
+- Remove the live symlinks `~/.claude/CLAUDE.md` and `~/.claude/settings.json`.
+- Remove `.claude/settings.local.json` from the repo if no project uses Claude.
+- Audit `CLAUDE.md` files, `installers/claude.manual.bash`,
+  `functions/claude-p.bash`, `functions/ccode.bash`, and documentation
+  references.
+- Decide whether to delete local `~/.claude` app data.
+- Do not add `.claude` to `materialized_directories`.
+
+This phase has no dependency on the render work. It can run first.
+
+### Phase 3: Git config (low risk, immediate win)
 
 - Add `[include] path = ~/.gitconfig.local` to the shared `.gitconfig`.
 - Move `core.excludesfile` and `commit.template` into `.gitconfig.local`.
 - Seed `.gitconfig.local` only if missing; never overwrite.
 - Test on Linux and macOS.
 
-### Phase 3: Generated theme files
+### Phase 4: Generated theme files
 
 - Replace the live symlinks for `color-theme`, `kitty-theme.conf`, and
   `git-theme.gitconfig` with real local files.
@@ -811,7 +831,7 @@ To be refined after the open questions, but the current goals are:
 - Verify that `color-theme default` and `color-theme remarkable` leave
   `git status` clean.
 
-### Phase 4: Pi settings
+### Phase 5: Pi settings
 
 - Create `_render/.pi/agent/settings.json` from shared keys.
 - Create machine patches for provider/model/enabledModels/npmCommand/packages.
@@ -820,15 +840,6 @@ To be refined after the open questions, but the current goals are:
   base or patch.
 - Decide whether `theme` is local-only or applied from the local theme file.
 - Verify Pi starts, `color-theme` works, and a second render is idempotent.
-
-### Phase 5: Claude settings
-
-- Create `_render/.claude/settings.json` from shared keys.
-- Decide whether Orca hooks are machine patch or app-owned.
-- Remove `settings.json.bak` from tracking; gitignore it.
-- Materialize `~/.claude` so managed files can coexist with credentials,
-  sessions, and history.
-- Verify Claude starts and Orca hooks still work.
 
 ### Phase 6: AWS Assume and other machine-local config
 
@@ -848,7 +859,8 @@ To be refined after the open questions, but the current goals are:
 ### Phase 8: Cleanup
 
 - Remove legacy migration code once every machine has run the new bootstrap.
-- Update `README.md`, `CLAUDE.md`, and `AGENTS.md` with the new model.
+- Update `README.md` and `AGENTS.md` with the new model. Remove or replace
+  `CLAUDE.md` if Claude Code is fully retired.
 - Add tests and CI.
 - Remove the manual `materialized_directories` list once the orchestrator can
   compute materialization from the shared + machine path union.
@@ -900,12 +912,12 @@ To be written once the open questions in section 10 are resolved.
 
 The likely first implementation slice is small and testable:
 
-1. Add `homelander render` with JSON fixture tests.
-2. Add machine identity and the `_machines` layout.
-3. Migrate `.gitconfig` to `include`.
-4. Migrate Pi settings.
-5. Migrate Claude settings.
-6. Move generated theme files out of git.
+1. Retire Claude Code and remove `.claude` from the repo.
+2. Add `homelander render` with JSON fixture tests.
+3. Add machine identity and the `_machines` layout.
+4. Migrate `.gitconfig` to `include`.
+5. Move generated theme files out of git.
+6. Migrate Pi settings.
 7. Consolidate branches.
 
 Do not start with a full rewrite. The current link behavior is working for most
