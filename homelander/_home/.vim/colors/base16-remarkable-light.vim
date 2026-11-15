@@ -10,10 +10,12 @@ let g:colors_name = 'base16-remarkable-light'
 
 function! s:hi(group, guifg, guibg, ctermfg, ctermbg, attr)
   let l:cmd = 'hi ' . a:group
-  if a:guifg !=# '' | let l:cmd .= ' guifg=#' . a:guifg | endif
-  if a:guibg !=# '' | let l:cmd .= ' guibg=#' . a:guibg | endif
-  if a:ctermfg !=# '' | let l:cmd .= ' ctermfg=' . a:ctermfg | endif
-  if a:ctermbg !=# '' | let l:cmd .= ' ctermbg=' . a:ctermbg | endif
+  " Empty colors must be explicit NONE: a partial :hi keeps any previously
+  " defined color, so vim's built-in guibg=Red would survive on Error groups.
+  if a:guifg !=# '' | let l:cmd .= ' guifg=#' . a:guifg | else | let l:cmd .= ' guifg=NONE' | endif
+  if a:guibg !=# '' | let l:cmd .= ' guibg=#' . a:guibg | else | let l:cmd .= ' guibg=NONE' | endif
+  if a:ctermfg !=# '' | let l:cmd .= ' ctermfg=' . a:ctermfg | else | let l:cmd .= ' ctermfg=NONE' | endif
+  if a:ctermbg !=# '' | let l:cmd .= ' ctermbg=' . a:ctermbg | else | let l:cmd .= ' ctermbg=NONE' | endif
   if a:attr !=# '' | let l:cmd .= ' gui=' . a:attr . ' cterm=' . a:attr | endif
   execute l:cmd
 endfunction
@@ -82,9 +84,9 @@ call s:hi('Tag',          '956600', '', '3',  '', 'none')
 call s:hi('Delimiter',    '78473d', '', '17', '', 'none')
 call s:hi('Underlined',   '326591', '', '4',  '', 'underline')
 call s:hi('Todo',         '956600', 'd8d6cf', '3', '253', 'bold')
-call s:hi('Error',        '9c3d34', 'd8d6cf', '1', '253', 'bold')
+call s:hi('Error',        '9c3d34', '',       '1', '',   'bold')
 " Built-in defaults are bright guibg=Red with termguicolors; theme them.
-call s:hi('ErrorMsg',     'f2f0e9', '9c3d34', '15', '1', 'none')
+call s:hi('ErrorMsg',     '9c3d34', '',       '1', '',   'bold')
 call s:hi('WarningMsg',   '292a28', 'b57d00', '15', '11', 'none')
 call s:hi('ModeMsg',      '686964', '',       '7',  '',   'none')
 call s:hi('MoreMsg',      '377748', '',       '2',  '',   'none')
