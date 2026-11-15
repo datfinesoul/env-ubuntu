@@ -33,20 +33,28 @@ at a time; do not rewrite the working link behavior first.
 - Sources `_core.bash` for logging and common setup.
 - Walks `homelander/_home/` at depth 1.
 - **Files**: symlinks `$HOME/<name>` -> `homelander/_home/<name>`.
-- **Directories**: by default symlinks the whole directory.
-- **Materialized directories** (`.config/env-ubuntu`, `.pi/agent`,
-  `.pi/agent/themes`) are created as real directories under `$HOME`, then their
-  children are linked individually, recursively. This lets repo files coexist
-  with app-generated local files.
+- **Depth-1 directories**: always materialized. A directory whose relative path
+  contains no `/` is created as a real directory under `$HOME`, then its
+  children are linked individually. `~/.vim`, `~/.config`, and `~/.pi` are
+  therefore real directories on every machine, and local app state such as
+  `~/.vim/.netrwhist` coexists with managed links.
+- **Deeper directories**: symlinked as one directory unless listed in
+  `materialized_directories` (`.config/env-ubuntu`, `.pi/agent`,
+  `.pi/agent/themes`). Children below a materialized directory are linked
+  recursively.
+- An existing symlink at a materialized path is removed before the real
+  directory is created.
 - Skips existing non-symlink targets: logs `fail "skip ..."` and continues.
 - **Legacy migration**: if a real directory is a tree of links that all resolve
   inside the source, it is removed and replaced by one directory symlink. A
   directory containing any regular file, broken link, or outside link is
   preserved and skipped.
 
-`voight.md` describes the older "always materialize directories at depth 1"
-behavior. The current script links whole directories unless the directory is in
-`materialized_directories`.
+`voight.md` misdescribes this in the other direction. The current script
+materializes every depth-1 directory, and links deeper directories whole unless
+the directory is in `materialized_directories`. Consequence: mixed-state
+directories at depth 1 (`~/.vim`, `~/.config`, `~/.pi`) are already safe, and
+only nested mixed directories need the list.
 
 ### 1.2 `homelander.bash` (current behavior)
 
@@ -78,7 +86,6 @@ Examples from this machine:
 
 ```text
 ~/.pi/agent/settings.json   -> repo/homelander/_home/.pi/agent/settings.json
-~/.claude/settings.json     -> repo/homelander/_home/.claude/settings.json  (legacy; remove)
 ~/.gitconfig                -> repo/homelander/_home/.gitconfig
 ~/.config/kitty             -> repo/homelander/_home/.config/kitty
 ~/.vim/pack                 -> repo/homelander/_home/.vim/pack
@@ -91,19 +98,27 @@ Mixed directories are more complicated:
                             coexist with linked settings/theme files
 ~/.config/env-ubuntu/       real dir (materialized); generated theme files
                             coexist with linked repo files
-~/.claude/                  legacy; real dir with app state AND managed links
+~/.claude/                  legacy; real dir with app data only (links removed)
 ~/.vim/                     real dir with app state AND managed links
 ~/.prompts/                 legacy materialized dir with a managed file link
 ```
 
-`~/.vim` is important: it contains local app state (`.netrwhist`) plus managed
-symlinks. `is_managed_container` rejects it because of the local file, so
-`homelinker` logs `skip` and stops deploying new managed entries. The explicit
-`materialized_directories` list works, but it is reactive and easy to forget.
+`~/.vim` needs no special handling. It is a depth-1 directory, so it is always
+materialized: `.netrwhist` stays local, managed entries are linked beside it,
+and `is_managed_container` never runs for it. No skip occurs.
 
-`~/.claude` is the same pattern, but it is being retired. Do not add it to
-`materialized_directories`; remove the managed links and the tracked files
-instead.
+`~/.vim/.vim` is a separate problem. The repo tracks a symlink at
+`homelander/_home/.vim/.vim` whose content is
+`./env-ubuntu/homelander/_home/.vim`. `homelinker` deploys tracked symlinks
+verbatim, so any checkout of a branch containing that file recreates a broken
+`~/.vim/.vim` link. It was added in `63624425` (2024-09-07) and is present on
+`ai-tool-stuff`, `fix-vim`, `fixes`, `gs-up`, `new-stuff`,
+`scripts-from-functions`, `the-mac`, and `origin/add-claude-github-actions-*`.
+It is absent from `main` and `home-config-conflict`. This is committed cruft,
+not a script defect, and it must be deleted from each branch that carries it.
+
+`~/.claude` was the same materialized pattern, but it is retired. The tracked
+tree and the two live links are removed; local app data is untouched.
 
 ### 1.5 Key facts from history
 
@@ -186,14 +201,14 @@ Two important details:
 - `theme` is also written by the `color-theme` shell function. It is a local
   preference, not a shared setting.
 
-### 3.2 Claude settings (legacy, to remove)
+### 3.2 Claude settings (legacy, removed)
 
-`~/.claude/settings.json` is also a symlink into the repo. It shows the same
+`~/.claude/settings.json` was also a symlink into the repo. It showed the same
 machine/runtime pattern: Orca hooks and a status line on one branch, a different
 model and theme on another, and a tracked `settings.json.bak`.
 
-This is evidence of the problem, not a file to migrate. Claude Code is retired,
-so `.claude` is a removal problem. See section 6.7.
+This was evidence of the problem, not a file to migrate. Claude Code is retired,
+so `.claude` was a removal problem. See section 6.7.
 
 ### 3.3 Git config (`~/.gitconfig`)
 
@@ -206,9 +221,30 @@ The shared file contains host-specific absolute paths:
     template = /home/philip.hadviger/.gitmessage
 ```
 
-`~/.gitconfig.local` already exists on this machine and is already gitignored,
-but the tracked `.gitconfig` does not include it. This is the cheapest existing
-win: move host paths into the local file and include it.
+The tracked file already includes `~/.gitconfig.local` (line 124) and
+`~/.config/env-ubuntu/git-theme.gitconfig` (line 127). `~/.gitconfig.local`
+exists, is gitignored, and holds a single key. The include does not solve the
+problem, and the local file is not load-bearing.
+
+The mechanism that dirties the repo is in the shell configuration, not in a
+human edit. `homelander/.bashrc/git-config.bash` contains exactly one line and
+runs on every interactive shell:
+
+```bash
+git config --global commit.template "${HOME}/.gitmessage"
+```
+
+`git config --global` writes the global file itself, which is the symlink into
+the repo. Git only reads an `[include]` target, so a local include can never
+absorb that write. Whenever `$HOME` differs from the committed value, each
+shell start rewrites the file and the working tree is dirty again.
+`_gs/reset.bash` restores the tracked copy with `git reset` plus
+`git checkout`, and is the current escape hatch.
+
+Consequence: treat `.gitconfig` as a known edge case, not a quick win. Any real
+fix must stop `git config --global` from targeting a tracked file, by deleting
+the `.bashrc` writer or by deploying `~/.gitconfig` as a rendered file instead
+of a symlink.
 
 ### 3.4 Generated theme artifacts
 
@@ -290,14 +326,16 @@ duplicate it forever and hide it from other machines.
 5. **There is no inventory.** Nothing declares which paths are linked, rendered,
    generated, or ignored. The behavior is spread across `homelinker.bash`,
    `homelander.bash`, `bootstrap.bash`, `.gitignore`, and convention.
-6. **Mixed directories are handled by a manual allowlist.** `~/.vim` already
-   demonstrates what happens when the list is incomplete: the whole directory
-   is skipped. `~/.claude` had the same problem, but it is being removed.
+6. **Mixed directories below depth 1 are handled by a manual allowlist.** A
+   nested mixed directory missing from `materialized_directories` is linked
+   whole, so new managed entries never appear. Depth-1 directories are always
+   materialized, so `~/.vim` is not affected.
 7. **Absolute paths leak into shared files.** `/Users/phadviger` and
    `/home/philip.hadviger` cannot be shared.
 8. **Partial solutions exist but are not generalized.** `materialized_directories`,
-   `.gitconfig.local`, `themes/` templates, gitignored generated bash snippets,
-   and `ENV_UBUNTU_ROOT` all point in the right direction.
+   `themes/` templates, gitignored generated bash snippets, and
+   `ENV_UBUNTU_ROOT` all point in the right direction. `_gs/reset.bash` is a
+   workaround, not a solution.
 
 ---
 
@@ -313,7 +351,8 @@ duplicate it forever and hide it from other machines.
    keys the repo manages. Local preferences and runtime keys stay.
 5. **Prefer app-native layering.** Use `[include]`, kitty `include`, bash
    snippet assembly, Vim `source`, and AWS Assume project/global rules before
-   writing a custom merge.
+   writing a custom merge. An include only helps for reads; it cannot absorb a
+   tool that writes the shared file (section 6.8).
 6. **Machine profiles are minimal diffs.** A profile should contain only what
    differs, not a copy of the whole tree.
 7. **No secrets, no absolute paths.** Use `~`, `$HOME`, and
@@ -469,41 +508,47 @@ package change, run a `capture`/`diff` command to update the base or machine
 patch. Without that, the live change is local only. That is preferable to
 committing app state by accident.
 
-### 6.7 Claude Code removal
+### 6.7 Claude Code removal (done)
 
-Claude Code is retired, so `.claude` is not migrated. Removal steps:
+Claude Code is retired, so `.claude` was not migrated. Completed steps:
 
-- Remove `homelander/_home/.claude/` from the repo.
-- Remove the live symlinks `~/.claude/CLAUDE.md` and `~/.claude/settings.json`.
-- Do not add `~/.claude` to `materialized_directories`.
-- Remove `.claude/settings.local.json` from the repo if no project uses it.
-- Audit the remaining Claude Code artifacts: `CLAUDE.md` files,
-  `installers/claude.manual.bash`, `functions/claude-p.bash`,
-  `functions/ccode.bash`, and any documentation or branch references.
-- Decide whether to delete local app data (`~/.claude/.credentials.json`,
-  history, sessions, projects) or leave it untouched.
+- Removed `homelander/_home/.claude/` from the repo.
+- Unlinked `~/.claude/CLAUDE.md` and `~/.claude/settings.json`.
+- Did not add `~/.claude` to `materialized_directories`.
+- Removed `.claude/settings.local.json` from the repo.
+- Removed the remaining Claude Code artifacts: root `CLAUDE.md`, the
+  `functions/`, `installers/`, and `scripts/` `CLAUDE.md` files,
+  `installers/claude.manual.bash`, `functions/claude-p.bash`, and
+  `functions/ccode.bash`. No tracked file references them.
+- Left local app data (`~/.claude/.credentials.json`, history, sessions,
+  projects, hooks) untouched. Removal is a separate decision.
 
-This removal is independent of the render work. It can happen first and removes
-one of the most complicated mutable files from the migration.
+This removal was independent of the render work and removed one of the most
+complicated mutable files from the migration.
 
-### 6.8 Git config proposal
+### 6.8 Git config (known edge case)
 
-```ini
-# ~/.gitconfig (shared, tracked)
-[include]
-    path = ~/.gitconfig.local
+Verified state:
 
-# ~/.gitconfig.local (machine-local, ignored)
-[core]
-    excludesfile = ~/.gitignore_global
-[commit]
-    template = ~/.gitmessage
-```
+- The tracked `.gitconfig` already has `[include] path = ~/.gitconfig.local`.
+- `~/.gitconfig.local` exists, is gitignored, and holds one key.
+- `homelander/.bashrc/git-config.bash` runs
+  `git config --global commit.template "${HOME}/.gitmessage"` on every shell.
+- `_gs/reset.bash` resets and checks out the tracked `.gitconfig`.
 
-Put `[include]` at the end so local values win for single-valued keys. Keep
-shared aliases, delta settings, and behavior in `.gitconfig`. Keep host paths,
-work identities, and signing keys in `.gitconfig.local` or an
-`[includeIf "gitdir:..."]` file.
+`git config --global` writes the global file, which is the symlink into the
+repo. An include cannot redirect that write. Repeated attempts with
+`.gitconfig.local` have therefore not fixed the churn.
+
+Decision: stop treating this as a quick win. Keep the current wiring, keep
+`_gs reset` as the escape hatch, and accept occasional resets. Revisit it when
+render mode exists; `~/.gitconfig` is then a render candidate, not an include
+candidate.
+
+If a minimal fix is wanted sooner: delete the single line in
+`homelander/.bashrc/git-config.bash`, because the tracked file already sets
+`commit.template`. That stops the writer but leaves the absolute path in the
+tracked file, so the host value is still wrong on another machine.
 
 ### 6.9 Generated theme proposal
 
@@ -535,12 +580,13 @@ work identities, and signing keys in `.gitconfig.local` or an
 | - | - | - | - | - |
 | `~/.bashrc`, `.bash_profile`, `.bash_logout` | assembled | shared snippets, OS conditionals | assembled shared | keep; optional machine snippet dir |
 | `~/.bash_aliases` | symlink | shared, OS conditionals | immutable shared | keep |
-| `~/.gitconfig` | symlink | shared plus absolute paths | shared + machine paths | add `[include] ~/.gitconfig.local`; move host paths |
-| `~/.gitconfig.local` | ignored local file | host paths, identities | machine local | keep ignored; seed only if missing |
+| `~/.gitconfig` | symlink | shared plus absolute paths, rewritten by `.bashrc` | known edge case | keep; `gs reset` when dirty; see 6.8 |
+| `~/.gitconfig.local` | ignored local file | one key; not load-bearing | machine local | keep ignored; do not rely on it |
 | `~/.gitmessage` | symlink | shared | immutable shared | keep |
 | `~/.my_profiles.json` | symlink | likely machine AWS profiles | machine (verify) | machine overlay or local ignore; check sensitivity |
 | `~/.vimrc` | symlink | shared plus feature drift | immutable shared | keep |
-| `~/.vim/` | real dir with legacy links | shared plus feature drift | immutable shared | materialize `.vim`; `.netrwhist` stays local |
+| `~/.vim/` | real dir (depth 1 is always materialized) | shared plus feature drift | immutable shared | keep; `.netrwhist` stays local |
+| `~/.vim/.vim` | broken link deployed from a tracked symlink | committed cruft | remove | delete the tracked symlink from every branch |
 | `~/.config/base16-shell/` | whole-dir link | shared | immutable shared | keep |
 | `~/.config/bat/` | whole-dir link | shared | immutable shared | keep |
 | `~/.config/coc/` | whole-dir link | shared; `memos.json` local | immutable shared | keep; memo file ignored |
@@ -553,9 +599,9 @@ work identities, and signing keys in `.gitconfig.local` or an
 | `~/.pi/agent/themes/` | materialized links | shared | immutable shared | keep |
 | `~/.pi/agent/aws-assume.json` | untracked | machine security rules | machine local | keep local or seed from machine profile |
 | `~/.pi/agent/auth.json`, `models-store.json`, `trust.json`, `sessions/`, `git/`, `extensions/` | untracked | runtime | runtime | ignore |
-| `~/.claude/CLAUDE.md` | symlink in mixed dir | legacy | remove | unlink; remove from repo |
-| `~/.claude/settings.json` | symlink in mixed dir | legacy | remove | unlink; remove from repo |
-| `~/.claude/settings.json.bak` | tracked | legacy backup | remove | remove from tracking; gitignore |
+| `~/.claude/CLAUDE.md` | symlink in mixed dir | legacy | remove | done: unlinked and removed |
+| `~/.claude/settings.json` | symlink in mixed dir | legacy | remove | done: unlinked and removed |
+| `~/.claude/settings.json.bak` | tracked | legacy backup | remove | done: removed from tracking |
 | `~/.claude/.credentials.json`, history, sessions, projects | untracked local app data | legacy/secret | leave or delete | decide after backup; never track |
 | `~/.terraformrc` | symlink | shared | immutable shared | keep |
 | `~/.prompts/` | real dir with managed link (legacy) | shared | immutable shared | let the migration collapse it, or materialize it |
@@ -563,10 +609,10 @@ work identities, and signing keys in `.gitconfig.local` or an
 | project `.pi/aws-assume.json`, `.pi/settings.json` | per-project | project scope | project config | keep in each project; not home-managed |
 | project `.claude/settings.local.json` | tracked project config | legacy | remove | remove if no project uses Claude Code |
 
-Immediate stopgap while the redesign is pending: add `.vim` to
-`materialized_directories`. Do not add `.claude`; remove its managed links and
-tracked files instead. This does not solve machine variation, but it stops new
-managed files from being silently skipped in the directories that remain.
+Immediate stopgap while the redesign is pending: none for `.vim`, which is
+already materialized and mixed-state safe. The only urgent cleanup is deleting
+`homelander/_home/.vim/.vim` from the branches that track it, and removing the
+live broken link.
 
 ---
 
@@ -721,6 +767,9 @@ These are proposals. The open questions below decide the details.
 - [ ] **Render semantics**: deep merge preserving unmanaged keys as proposed?
   Arrays replace or union for specific keys (`packages`, `enabledModels`,
   `hooks`)? How do we delete a managed key?
+- [ ] **Git config churn**: delete the `git config --global commit.template`
+  line, render `~/.gitconfig` like Pi settings, or keep `_gs reset` as the only
+  remedy?
 - [ ] **Pi managed keys**: which keys are managed versus local? Is `theme` owned
   by `color-theme` only? Are `packages` shared or per-machine?
 - [ ] **Claude removal scope**: remove only the `~/.claude` managed links and
@@ -801,25 +850,29 @@ To be refined after the open questions, but the current goals are:
 - Fail clearly when the profile is missing; do not guess.
 - Write the selected machine to `~/.config/env-ubuntu/machine` on success.
 
-### Phase 2: Retire Claude Code
+### Phase 2: Retire Claude Code (done)
 
-- Remove `homelander/_home/.claude/` from the repo.
+- Remove `homelander/_home/.claude/` from the repo. Done.
 - Remove the live symlinks `~/.claude/CLAUDE.md` and `~/.claude/settings.json`.
-- Remove `.claude/settings.local.json` from the repo if no project uses Claude.
+  Done.
+- Remove `.claude/settings.local.json` from the repo. Done.
 - Audit `CLAUDE.md` files, `installers/claude.manual.bash`,
   `functions/claude-p.bash`, `functions/ccode.bash`, and documentation
-  references.
-- Decide whether to delete local `~/.claude` app data.
-- Do not add `.claude` to `materialized_directories`.
+  references. Done: all removed, no references left.
+- Decide whether to delete local `~/.claude` app data. Open; data is untouched.
+- Do not add `.claude` to `materialized_directories`. Kept.
 
-This phase has no dependency on the render work. It can run first.
+This phase has no dependency on the render work. It ran first: the tracked
+files were removed and the two live symlinks unlinked.
 
-### Phase 3: Git config (low risk, immediate win)
+### Phase 3: Remove committed artifacts (low risk)
 
-- Add `[include] path = ~/.gitconfig.local` to the shared `.gitconfig`.
-- Move `core.excludesfile` and `commit.template` into `.gitconfig.local`.
-- Seed `.gitconfig.local` only if missing; never overwrite.
-- Test on Linux and macOS.
+- Delete `homelander/_home/.vim/.vim` from every branch that tracks it, and
+  remove the broken live link `~/.vim/.vim`.
+- Audit `homelander/_home` for other committed symlinks. `homelinker` deploys
+  them verbatim, so any tracked symlink pointing inside the repo is a defect.
+- Git config churn stays a known edge case. Do not migrate host paths to
+  `~/.gitconfig.local`; see section 6.8.
 
 ### Phase 4: Generated theme files
 
@@ -912,10 +965,10 @@ To be written once the open questions in section 10 are resolved.
 
 The likely first implementation slice is small and testable:
 
-1. Retire Claude Code and remove `.claude` from the repo.
-2. Add `homelander render` with JSON fixture tests.
-3. Add machine identity and the `_machines` layout.
-4. Migrate `.gitconfig` to `include`.
+1. Retire Claude Code and remove `.claude` from the repo. (Done.)
+2. Delete the tracked `.vim/.vim` symlink from every branch.
+3. Add `homelander render` with JSON fixture tests.
+4. Add machine identity and the `_machines` layout.
 5. Move generated theme files out of git.
 6. Migrate Pi settings.
 7. Consolidate branches.
