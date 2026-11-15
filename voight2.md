@@ -586,7 +586,7 @@ tracked file, so the host value is still wrong on another machine.
 | `~/.my_profiles.json` | symlink | likely machine AWS profiles | machine (verify) | machine overlay or local ignore; check sensitivity |
 | `~/.vimrc` | symlink | shared plus feature drift | immutable shared | keep |
 | `~/.vim/` | real dir (depth 1 is always materialized) | shared plus feature drift | immutable shared | keep; `.netrwhist` stays local |
-| `~/.vim/.vim` | broken link deployed from a tracked symlink | committed cruft | remove | delete the tracked symlink from every branch |
+| `~/.vim/.vim` | broken link deployed from a tracked symlink | committed cruft | remove | live link removed; delete from branches in Phase 7 |
 | `~/.config/base16-shell/` | whole-dir link | shared | immutable shared | keep |
 | `~/.config/bat/` | whole-dir link | shared | immutable shared | keep |
 | `~/.config/coc/` | whole-dir link | shared; `memos.json` local | immutable shared | keep; memo file ignored |
@@ -610,9 +610,9 @@ tracked file, so the host value is still wrong on another machine.
 | project `.claude/settings.local.json` | tracked project config | legacy | remove | remove if no project uses Claude Code |
 
 Immediate stopgap while the redesign is pending: none for `.vim`, which is
-already materialized and mixed-state safe. The only urgent cleanup is deleting
-`homelander/_home/.vim/.vim` from the branches that track it, and removing the
-live broken link.
+already materialized and mixed-state safe. The live broken link is removed. The
+tracked symlinks stay on their branches until Phase 7 by decision, so no
+per-branch commit is needed now.
 
 ---
 
@@ -867,8 +867,9 @@ files were removed and the two live symlinks unlinked.
 
 ### Phase 3: Remove committed artifacts (low risk)
 
-- Delete `homelander/_home/.vim/.vim` from every branch that tracks it, and
-  remove the broken live link `~/.vim/.vim`.
+- The broken live link `~/.vim/.vim` is removed. The tracked
+  `homelander/_home/.vim/.vim` symlink stays on its eight refs and is deleted
+  during Phase 7, so no per-branch commit is needed now.
 - Audit `homelander/_home` for other committed symlinks. `homelinker` deploys
   them verbatim, so any tracked symlink pointing inside the repo is a defect.
 - Git config churn stays a known edge case. Do not migrate host paths to
@@ -908,6 +909,8 @@ files were removed and the two live symlinks unlinked.
 - Merge genuine feature drift (starship modules, Vim theme sync, kitty tab
   title, installers) into `main` as shared.
 - Archive machine branches after verification. Keep feature branches separate.
+- Delete `homelander/_home/.vim/.vim` from every branch that still carries it.
+  It is absent from `main` and `home-config-conflict`.
 
 ### Phase 8: Cleanup
 
