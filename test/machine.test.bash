@@ -43,7 +43,18 @@ export FIXTURE_ROOT="${work}/profiles"
 check_equal "profiles are listed and sorted" "a
 b" "$(probe "available_machines \"\${FIXTURE_ROOT}\"")"
 
-# 6. require_machine returns an explicit name without prompting.
+# 6. The repository profile list includes every tracked machine.
+check_contains "repository profiles include work-mac" "work-mac" \
+	"$(probe "available_machines")"
+check_contains "repository profiles include dell" "dell-laptop-linux" \
+	"$(probe "available_machines")"
+
+# 7. A machine patch never carries runtime or local keys.
+work_mac_patch="${REPO_ROOT}/homelander/_machines/work-mac/_patch/.pi/agent/settings.json"
+check_equal "work-mac patch keeps runtime keys out" "false" \
+	"$(jq -r 'has("lastChangelogVersion") or has("extensionChangelogVersions") or has("theme")' "${work_mac_patch}")"
+
+# 8. require_machine returns an explicit name without prompting.
 check_equal "require_machine returns an explicit name" "explicit-name" \
 	"$(ENV_UBUNTU_MACHINE=env-name probe "require_machine explicit-name")"
 

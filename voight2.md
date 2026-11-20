@@ -2,8 +2,8 @@
 
 Status: discussion draft. Supersedes `voight.md`. Phases 2, 4, 5, and 6 are
 done. The section 6.8 git-config fix is in the working tree and not yet
-committed. Pi settings are the only render target so far, and
-`dell-laptop-linux` is the only machine profile.
+committed. Pi settings are the only render target so far. Machine profiles exist
+for `dell-laptop-linux` and `work-mac`.
 
 Claude Code is being retired. `.claude` is treated as legacy and removed, not
 migrated.
@@ -549,6 +549,9 @@ For non-JSON files:
 | `theme` | local preference | owned by `color-theme`; never in base or patch |
 | `lastChangelogVersion`, `extensionChangelogVersions` | runtime | never in base or patch; preserved in target |
 
+`work-mac` overrides `packages` with a full list, because
+`npm:@grafana/agento11y-pi` is work-only.
+
 Implemented as:
 
 - `homelander/_render/.pi/agent/settings.json` holds the shared keys.
@@ -860,7 +863,7 @@ These are proposals. The open questions below decide the details.
 
 - [ ] **Machine inventory**: which machines exist, and what are their stable
   profile names (`work-linux`, `home-linux`, `work-mac`, ...)? Known so far:
-  `dell-laptop-linux`.
+  `dell-laptop-linux` and `work-mac`.
 - [x] **Machine identity source** (resolved): `--machine`,
   `ENV_UBUNTU_MACHINE`, then `~/.config/env-ubuntu/machine`. The resolved name
   is written back on success (D18).
@@ -1031,6 +1034,21 @@ files were removed and the two live symlinks unlinked.
   materialization, so this phase needed the overlay mode from section 6.3.
 
 ### Phase 7: Branch consolidation
+
+`origin/main` carries one commit that this branch lacks: `10f2327f save`
+(2026-11-20). That commit is the work-mac configuration. Its content was ported
+selectively, because a plain merge would restore retired files:
+
+- Ported: `.pi/questions.json`, `notes/plans/git-ssh-signing-migration.md`, the
+  `git rp` alias, the Kitty remote-control password lines, and the work-mac Pi
+  keys as `_machines/work-mac/_patch/.pi/agent/settings.json`.
+- Not ported: `.claude/settings.json` and `.claude/settings.json.bak` (Claude is
+  retired, D15), and the reduced 9-line `AGENTS.md` (this branch has the full
+  file plus the decision-rule block).
+- Shared keys in that commit match the render base, so the base did not change.
+- A later `git merge origin/main` will report modify/delete conflicts on the
+  Claude paths and on the Pi settings file. Keep them deleted. `git merge -s
+  ours origin/main` records the merge without changing content.
 
 - Extract the remaining machine differences from `main` and each machine branch
   into machine profiles.
