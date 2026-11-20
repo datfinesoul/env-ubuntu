@@ -1,9 +1,6 @@
 # Homelinker Redesign v2 — Discussion & Plan
 
-Status: discussion draft. Supersedes `voight.md`. Phases 2, 4, 5, and 6 are
-done. The section 6.8 git-config fix is in the working tree and not yet
-committed. Pi settings are the only render target so far. Machine profiles exist
-for `dell-laptop-linux` and `work-mac`.
+Status: `voight3.md` holds the current state and the leftovers. This file keeps the design and the phase history. Phases 2, 4, 5, and 6 are done, and the git-config fix from section 6.8 is committed. Pi settings are the only render target, and profiles exist for `dell-laptop-linux` and `work-mac`.
 
 Claude Code is being retired. `.claude` is treated as legacy and removed, not
 migrated.
@@ -277,8 +274,7 @@ Result: the churn is fixed without render mode. `git config --path` reports
 `/home/philip.hadviger/.gitmessage` and `/home/philip.hadviger/.gitignore_global`
 on this host. `~/.gitconfig.local` still sets an absolute `commit.template`, but
 the tracked `[commit]` block comes after the `[include]`, so the tracked value
-wins and the local key is redundant. Both edits are in the working tree and not
-yet committed.
+wins and the local key is redundant. Both edits are committed.
 
 ### 3.4 Generated theme artifacts
 
@@ -625,7 +621,7 @@ git config --path core.excludesFile
 Both commands report paths under `$HOME`, so the values are correct. A new
 interactive shell no longer changes the tracked file, because no writer remains.
 
-Status: both edits are in the working tree and not committed.
+Status: both edits are committed.
 `~/.gitconfig.local` is now redundant. It sets the same key with an absolute
 path, and the tracked `[commit]` block comes after the `[include]`, so the
 tracked value wins.
@@ -863,7 +859,7 @@ These are proposals. The open questions below decide the details.
 
 - [ ] **Machine inventory**: which machines exist, and what are their stable
   profile names (`work-linux`, `home-linux`, `work-mac`, ...)? Known so far:
-  `dell-laptop-linux` and `work-mac`.
+  `dell-laptop-linux`, `work-mac`, and `home-desktop-linux`.
 - [x] **Machine identity source** (resolved): `--machine`,
   `ENV_UBUNTU_MACHINE`, then `~/.config/env-ubuntu/machine`. The resolved name
   is written back on success (D18).
@@ -985,9 +981,8 @@ files were removed and the two live symlinks unlinked.
   during Phase 7, so no per-branch commit is needed now.
 - Audit `homelander/_home` for other committed symlinks. `homelinker` deploys
   them verbatim, so any tracked symlink pointing inside the repo is a defect.
-- Git config churn is fixed in the working tree. The writer snippet is deleted
-  and the tracked file uses `~/` paths. Commit those two changes. See
-  section 6.8.
+- Git config churn is fixed and committed. The writer snippet is deleted, and
+  the tracked file uses `~/` paths. See section 6.8.
 
 ### Phase 4: Generated theme files (done)
 
