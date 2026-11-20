@@ -1,9 +1,9 @@
 # Homelinker Redesign v2 — Discussion & Plan
 
-Status: discussion draft. Supersedes `voight.md`. Phase 2 (Claude Code removal),
-Phase 4 (generated theme files), and Phase 5 (Pi settings render) are done. The
-section 6.8 git-config fix is in the working tree and not yet committed. Pi
-settings are the only render target so far.
+Status: discussion draft. Supersedes `voight.md`. Phases 2, 4, 5, and 6 are
+done. The section 6.8 git-config fix is in the working tree and not yet
+committed. Pi settings are the only render target so far, and
+`dell-laptop-linux` is the only machine profile.
 
 Claude Code is being retired. `.claude` is treated as legacy and removed, not
 migrated.
@@ -468,10 +468,11 @@ Rules:
 - Paths that are generated or runtime are absent from the repo and covered by
   `.gitignore`.
 - The machine tree is linked after the shared tree, so it wins for whole
-  files/directories.
+  files/directories. Implemented in `homelinker.bash` through `--machine-dir`,
+  with a safety guard against writing through a symlinked parent.
 - If a machine overlay needs to add a file inside a shared directory, that
-  directory must be materialized. The orchestrator should compute this from the
-  union of shared and machine paths, not from a hand-maintained list.
+  directory must be materialized. `homelinker.bash` computes this from the union
+  of shared and machine paths (section 6.3).
 
 Claude Code is absent by design. `.claude` is retired; see section 6.7.
 
@@ -634,7 +635,7 @@ needed now. This file needs no `_render` entry and no `_machines` patch.
   creates the rest.
 - Do not let `bootstrap` overwrite an existing theme choice.
 
-### 6.10 AWS Assume proposal
+### 6.10 AWS Assume proposal (done)
 
 - Keep project policies (`.pi/aws-assume.json`) in their project repos. Do not
   centralize them in `env-ubuntu`.
@@ -657,7 +658,7 @@ needed now. This file needs no `_render` entry and no `_machines` patch.
 | `~/.gitconfig` | symlink | shared; host-neutral `~/` paths | immutable shared | keep; writer removed; see 6.8 |
 | `~/.gitconfig.local` | ignored local file | one key, now redundant | machine local | keep ignored; do not rely on it |
 | `~/.gitmessage` | symlink | shared | immutable shared | keep |
-| `~/.my_profiles.json` | symlink | likely machine AWS profiles | machine (verify) | machine overlay or local ignore; check sensitivity |
+| `~/.my_profiles.json` | machine overlay link | profile names for `profile` | machine | moved to `_machines/dell-laptop-linux/_home`; see 6.3 |
 | `~/.vimrc` | symlink, after a real copy on the reviewed host | shared plus feature drift | immutable shared | keep, and the link is restored |
 | `~/.vim/` | real dir (depth 1 is always materialized) | shared plus feature drift | immutable shared | keep; `.netrwhist` stays local |
 | `~/.vim/.vim` | broken link deployed from a tracked symlink | committed cruft | remove | live link removed; delete from branches in Phase 7 |
@@ -780,7 +781,7 @@ Use a hybrid:
   central config file, directory name as target path, `.target` dotfile per
   directory.
 
-### 9.2 New (proposed, pending open questions; D16 applied)
+### 9.2 New (proposed, pending open questions; D16, D20–D22 applied)
 
 - **D4: One branch, many machines.** Machine differences move from branches
   into machine profiles.
@@ -818,6 +819,13 @@ Use a hybrid:
   missing profile fails and lists the available profiles.
 - **D19: `theme` stays local.** `color-theme` owns the key. The shared base and
   every machine patch leave it out, so a render preserves it.
+- **D20: The machine overlay links after the shared tree.** A machine entry
+  replaces a repository symlink, never a local file. Materialization is computed
+  from the shared and machine path union (D8, section 6.3).
+- **D21: `.my_profiles.json` is machine-scoped.** It holds Bitwarden profile
+  folder names, so it lives in the machine overlay, not the shared tree.
+- **D22: AWS Assume policy stays machine-local.** No tracked global policy and
+  no seeding path. Project policies stay in project repos.
 
 These are proposals. The open questions below decide the details.
 
@@ -851,8 +859,9 @@ These are proposals. The open questions below decide the details.
 - [x] **Machine identity source** (resolved): `--machine`,
   `ENV_UBUNTU_MACHINE`, then `~/.config/env-ubuntu/machine`. The resolved name
   is written back on success (D18).
-- [ ] **Machine profile layout**: `_machines/<name>/_home` plus `_patch` as
-  proposed, or a manifest that lists entries and modes?
+- [x] **Machine profile layout** (resolved): `_machines/<name>/_home` is
+  overlay-linked after the shared tree. `_machines/<name>/_patch` holds render
+  patches. See sections 6.3 and 6.6.
 - [ ] **Render semantics**: deep merge preserving unmanaged keys as proposed?
   Arrays replace or union for specific keys (`packages`, `enabledModels`,
   `hooks`)? How do we delete a managed key? Implemented: deep merge, arrays
@@ -872,12 +881,12 @@ These are proposals. The open questions below decide the details.
   `functions/ccode.bash`, `.claude/settings.local.json`)?
 - [ ] **Claude local data**: delete `~/.claude` app data (credentials, history,
   sessions, projects), or leave it untouched after unlinking managed files?
-- [ ] **AWS Assume global file**: track it, seed it from a machine profile, or
-  leave it local forever? Are profile names sensitive? Which projects get
-  policies? No global file exists on the reviewed machine, so "leave it local"
-  needs no work.
-- [ ] **`.my_profiles.json`**: is it machine-specific, sensitive, or shared?
-  Should it move out of the repo?
+- [x] **AWS Assume global file** (resolved): leave it local forever. No
+  `~/.pi/agent/aws-assume.json` exists on this host, and this repo carries no
+  `.pi/aws-assume.json`. Seeding is not implemented.
+- [x] **`.my_profiles.json`** (resolved): machine-scoped. `functions/profile.bash`
+  reads it, and its names map to Bitwarden folders. It now lives in
+  `_machines/dell-laptop-linux/_home/`.
 - [x] **Theme flow** (resolved): `color-theme` keeps writing `theme` in the
   live file. The key is local-only and never appears in base or patch (D19).
 - [ ] **Capture/adopt command**: do we need a command to pull intentional live
@@ -936,12 +945,12 @@ To be refined after the open questions, but the current goals are:
 - Verify the classification table in section 7 against every tracked path under
   `homelander/_home`.
 
-### Phase 1: Machine identity and layout (partly done)
+### Phase 1: Machine identity and layout (done)
 
 - Add `--machine` and `ENV_UBUNTU_MACHINE`. Done.
 - Add `_machines/<name>/_home` and `_machines/<name>/_patch` skeletons for the
-  current machines. Partly done: `_machines/dell-laptop-linux/_patch` exists, no
-  `_home` overlay yet, and no other machine has a profile.
+  current machines. Done for `dell-laptop-linux`. Other machines still need a
+  profile.
 - Fail clearly when the profile is missing; do not guess. Done.
 - Write the selected machine to `~/.config/env-ubuntu/machine` on success. Done.
 
@@ -1003,12 +1012,17 @@ files were removed and the two live symlinks unlinked.
   passes 37 checks.
 - Not verified: a full Pi restart against the rendered file.
 
-### Phase 6: AWS Assume and other machine-local config
+### Phase 6: AWS Assume and other machine-local config (done)
 
-- Decide whether `~/.pi/agent/aws-assume.json` is tracked, seeded, or local.
-- Keep project policies in project repos.
-- Verify `env-ubuntu` remains without a policy unless explicitly wanted.
-- Classify `.my_profiles.json` and move it out of the repo if sensitive.
+- `~/.pi/agent/aws-assume.json` stays machine-local. No such file exists on
+  this host, and no seed path is implemented.
+- Project policies stay in project repos. `env-ubuntu` carries no
+  `.pi/aws-assume.json`.
+- Verified that the repo has no AWS policy and no AWS profile names.
+- Moved `.my_profiles.json` to `_machines/dell-laptop-linux/_home/`. The live
+  link now points at the machine overlay.
+- Implemented machine overlay linking in `homelinker.bash`, including union
+  materialization, so this phase needed the overlay mode from section 6.3.
 
 ### Phase 7: Branch consolidation
 
@@ -1056,8 +1070,7 @@ Suggested cases:
 14. Dry-run makes no changes.
 15. No secret path is ever copied or tracked.
 
-Cases 6–11, 13, and 14 are implemented in `test/`. Cases 1–5, 12, and 15 need
-the link migration first.
+Cases 1–14 are implemented in `test/`. Case 15 is not implemented yet.
 
 Test fixtures:
 
@@ -1086,8 +1099,8 @@ The likely first implementation slice is small and testable:
 3. Delete the tracked `.vim/.vim` symlink from every branch.
 4. Add `homelander render` with JSON fixture tests. (Done as `render.bash` plus
    `./test/run.bash`.)
-5. Add machine identity and the `_machines` layout. (Partly done: identity,
-   `--machine`, and one patch profile.)
+5. Add machine identity and the `_machines` layout. (Done: identity,
+   `--machine`, one `_patch` profile, and one `_home` overlay.)
 6. Move generated theme files out of git. (Done.)
 7. Migrate Pi settings. (Done.)
 8. Consolidate branches.

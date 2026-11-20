@@ -28,8 +28,9 @@ if [[ "${kernel_name}" == 'Darwin' ]]; then
 fi
 "${script_dir}/homelander.bash" .bashrc
 "${script_dir}/homelander.bash" .bash_logout
-"${script_dir}/homelinker.bash"
+# Render first so the machine record exists before the overlay is linked.
 "${script_dir}/pi-settings.bash"
+"${script_dir}/homelinker.bash"
 
 function cleanup {
   ls /tmp/*.log

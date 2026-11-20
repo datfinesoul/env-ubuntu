@@ -16,13 +16,14 @@
 #
 # shellcheck source=./_core.bash
 . "$(dirname "${0}")/_core.bash"
+# shellcheck source=./machine.bash
+. "$(dirname "${0}")/machine.bash"
 
 render_source="${script_dir}/homelander/_render/.pi/agent/settings.json"
-machine_root="${script_dir}/homelander/_machines"
 target_file="${HOME}/.pi/agent/settings.json"
-machine_file="${HOME}/.config/env-ubuntu/machine"
+machine_file="${machine_record}"
 
-machine="${ENV_UBUNTU_MACHINE:-}"
+machine_arg=""
 dry_run=0
 
 __usage() {
@@ -36,18 +37,10 @@ __usage() {
 	exit 1
 }
 
-available_machines() {
-	local entry
-	for entry in "${machine_root}"/*/; do
-		[[ -d "${entry}" ]] || continue
-		basename "${entry}"
-	done | sort
-}
-
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--machine)
-			machine="${2:-}"
+			machine_arg="${2:-}"
 			shift 2
 			;;
 		--dry-run)
@@ -64,13 +57,11 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-if [[ -z "${machine}" && -r "${machine_file}" ]]; then
-	machine="$(tr -d '[:space:]' < "${machine_file}")"
-fi
+machine="$(resolve_machine "${machine_arg}")"
 
 if [[ -z "${machine}" ]]; then
 	fail "no machine profile selected"
-	fail "use --machine <name>, set ENV_UBUNTU_MACHINE, or write ${machine_file}"
+	fail "use --machine <name>, set ENV_UBUNTU_MACHINE, or write ${machine_record}"
 	fail "available profiles:"
 	available_machines | while IFS= read -r name; do fail "  ${name}"; done
 	exit 1

@@ -25,7 +25,10 @@ available profiles.
 ./pi-settings.bash --machine dell-laptop-linux
 ```
 
-Run `./test/run.bash` after you change the render scripts.
+`homelinker.bash` links `_machines/<name>/_home/` after the shared tree, so a
+machine entry wins for the path it covers.
+
+Run `./test/run.bash` after you change the render or link scripts.
 
 ## `gh` CLI
 

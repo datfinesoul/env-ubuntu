@@ -113,6 +113,20 @@ check_file_absent() {
 	fi
 }
 
+check_plain_dir() {
+	local label="$1"
+	local path="$2"
+
+	test_count=$((test_count + 1))
+	if [[ -d "${path}" && ! -h "${path}" ]]; then
+		printf 'ok   %s\n' "${label}"
+	else
+		test_failures=$((test_failures + 1))
+		printf 'FAIL %s\n' "${label}"
+		printf '  not a plain directory: %s\n' "${path}"
+	fi
+}
+
 check_symlink() {
 	local label="$1"
 	local path="$2"
