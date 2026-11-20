@@ -12,7 +12,7 @@
 	autocrlf = input
 	whitespace = -trailing-space
 	ignorecase = true
-	excludesfile = /Users/phadviger/.gitignore_global
+	excludesfile = ~/.gitignore_global
 	editor = vim
 	pager = less -FXRS -x2
 [diff]
@@ -140,7 +140,7 @@
 [commit]
 	gpgsign = true
 	verbose = true
-	template = /home/philip.hadviger/.gitmessage
+	template = ~/.gitmessage
 ;[url "https://git@"]
 ;  insteadOf = git://
 [rerere]

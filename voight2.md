@@ -1,7 +1,8 @@
 # Homelinker Redesign v2 — Discussion & Plan
 
 Status: discussion draft. Supersedes `voight.md`. Phase 2 (Claude Code removal)
-and Phase 4 (generated theme files) are done. No render code exists yet.
+and Phase 4 (generated theme files) are done. The section 6.8 git-config fix is
+in the working tree and not yet committed. No render code exists yet.
 
 Claude Code is being retired. `.claude` is treated as legacy and removed, not
 migrated.
@@ -224,7 +225,7 @@ so `.claude` was a removal problem. See section 6.7.
 
 ### 3.3 Git config (`~/.gitconfig`)
 
-The shared file contains host-specific absolute paths:
+The shared file used to contain host-specific absolute paths:
 
 ```ini
 [core]
@@ -233,16 +234,26 @@ The shared file contains host-specific absolute paths:
     template = /home/philip.hadviger/.gitmessage
 ```
 
+The working tree now uses `~/` forms, so the tracked file no longer depends on
+the host:
+
+```ini
+[core]
+    excludesfile = ~/.gitignore_global
+[commit]
+    template = ~/.gitmessage
+```
+
 The tracked file already includes `~/.gitconfig.local` (line 124) and
 `~/.config/env-ubuntu/git-theme.gitconfig` (line 127). `~/.gitconfig.local`
-exists, is gitignored, and holds one key: `commit.template`, with the same
-absolute path as the tracked file. The include does not solve the problem, and
-the local key never takes effect. Git applies a key that appears after an
-include, and the tracked `[commit]` block at line 143 sets the same key.
+exists, is gitignored, and holds one key: `commit.template`, with an absolute
+path. The include does not solve the problem, and the local key does not take
+effect. Git applies a key that appears after an include, and the tracked
+`[commit]` block at line 143 sets the same key.
 
-The mechanism that dirties the repo is in the shell configuration, not in a
-human edit. `homelander/.bashrc/git-config.bash` contains exactly one line and
-runs on every interactive shell:
+The mechanism that dirtied the repo was in the shell configuration, not in a
+human edit. `homelander/.bashrc/git-config.bash` contained exactly one line and
+ran on every interactive shell:
 
 ```bash
 git config --global commit.template "${HOME}/.gitmessage"
@@ -251,19 +262,22 @@ git config --global commit.template "${HOME}/.gitmessage"
 `git config --global` writes the global file itself, which is the symlink into
 the repo. Git follows the link and changes the tracked file, and the link stays
 a link. Git only reads an `[include]` target, so a local include can never
-absorb that write.
+absorb that write. The working tree deletes that snippet, so the write no longer
+happens.
 
 A write with an unchanged value leaves the file byte-identical. This host
-therefore stays clean, because `$HOME` equals the committed path. A host whose
-`$HOME` differs dirties the tree on the first interactive shell. Git expands
-`~/` in both keys, so a host-neutral tracked file is possible.
-`_gs/reset.bash` restores the tracked copy with `git reset` plus
-`git checkout`, and is the current escape hatch.
+therefore stayed clean, because `$HOME` equals the committed path. A host whose
+`$HOME` differs dirtied the tree on the first interactive shell. Git expands
+`~/` in both keys, so a host-neutral tracked file is possible, and the tracked
+file now uses that form. `_gs/reset.bash` restores the tracked copy with
+`git reset` plus `git checkout`, and stays available as an escape hatch.
 
-Consequence: treat `.gitconfig` as a known edge case, not a quick win. Any real
-fix must stop `git config --global` from targeting a tracked file, by deleting
-the `.bashrc` writer or by deploying `~/.gitconfig` as a rendered file instead
-of a symlink.
+Result: the churn is fixed without render mode. `git config --path` reports
+`/home/philip.hadviger/.gitmessage` and `/home/philip.hadviger/.gitignore_global`
+on this host. `~/.gitconfig.local` still sets an absolute `commit.template`, but
+the tracked `[commit]` block comes after the `[include]`, so the tracked value
+wins and the local key is redundant. Both edits are in the working tree and not
+yet committed.
 
 ### 3.4 Generated theme artifacts
 
@@ -355,8 +369,8 @@ duplicate it forever and hide it from other machines.
    nested mixed directory missing from `materialized_directories` is linked
    whole, so new managed entries never appear. Depth-1 directories are always
    materialized, so `~/.vim` is not affected.
-7. **Absolute paths leak into shared files.** `/Users/phadviger` and
-   `/home/philip.hadviger` cannot be shared.
+7. **Absolute paths leaked into shared files.** `/Users/phadviger` and
+   `/home/philip.hadviger` cannot be shared. The git config now uses `~/` forms.
 8. **Partial solutions exist but are not generalized.** `materialized_directories`,
    `themes/` templates, gitignored generated bash snippets, and
    `ENV_UBUNTU_ROOT` all point in the right direction. `_gs/reset.bash` is a
@@ -551,34 +565,47 @@ Claude Code is retired, so `.claude` was not migrated. Completed steps:
 This removal was independent of the render work and removed one of the most
 complicated mutable files from the migration.
 
-### 6.8 Git config (known edge case)
+### 6.8 Git config (fixed in the working tree)
 
-Verified state:
+Verified state before the fix:
 
 - The tracked `.gitconfig` already has `[include] path = ~/.gitconfig.local`.
 - `~/.gitconfig.local` exists, is gitignored, and holds one key.
-- `homelander/.bashrc/git-config.bash` runs
+- `homelander/.bashrc/git-config.bash` ran
   `git config --global commit.template "${HOME}/.gitmessage"` on every shell.
 - `_gs/reset.bash` resets and checks out the tracked `.gitconfig`.
 
 `git config --global` writes the global file, which is the symlink into the
 repo. An include cannot redirect that write. Repeated attempts with
-`.gitconfig.local` have therefore not fixed the churn.
+`.gitconfig.local` therefore did not fix the churn.
 
-Decision: stop treating this as a quick win. Keep the current wiring, keep
-`_gs reset` as the escape hatch, and accept occasional resets. Revisit it when
-render mode exists; `~/.gitconfig` is then a render candidate, not an include
-candidate.
+Decision: apply the minimal fix. Do not render this file.
 
-If a minimal fix is wanted sooner, delete the single line in
-`homelander/.bashrc/git-config.bash`, because the tracked file already sets
-`commit.template`. That stops the writer. Then change the two absolute paths to
-`~/` forms. Git expands `~/` in `commit.template` and in `core.excludesFile`, so
-the tracked file becomes host-neutral. Verify with
-`git config --path commit.template` and `git config --path core.excludesFile`.
-No render is needed for this file. Deleting the writer alone is not enough,
-because the writer writes an absolute path, so the file must also lose its host
-dependence.
+1. Delete `homelander/.bashrc/git-config.bash`. The tracked file already sets
+   `commit.template`, so the writer only duplicates a value.
+2. Change `core.excludesfile` and `commit.template` in the tracked file to `~/`
+   forms. Git expands `~/` in both keys.
+
+Deleting the writer alone is not sufficient. The writer wrote an absolute path,
+so the file must also lose its host dependence.
+
+Verification:
+
+```bash
+git config --path commit.template
+git config --path core.excludesFile
+```
+
+Both commands report paths under `$HOME`, so the values are correct. A new
+interactive shell no longer changes the tracked file, because no writer remains.
+
+Status: both edits are in the working tree and not committed.
+`~/.gitconfig.local` is now redundant. It sets the same key with an absolute
+path, and the tracked `[commit]` block comes after the `[include]`, so the
+tracked value wins.
+
+Render mode remains an option if git ever needs generated content. It is not
+needed now. This file needs no `_render` entry and no `_machines` patch.
 
 ### 6.9 Generated theme proposal (done)
 
@@ -610,8 +637,8 @@ dependence.
 | - | - | - | - | - |
 | `~/.bashrc`, `.bash_profile`, `.bash_logout` | assembled | shared snippets, OS conditionals | assembled shared | keep; optional machine snippet dir |
 | `~/.bash_aliases` | symlink | shared, OS conditionals | immutable shared | keep |
-| `~/.gitconfig` | symlink | shared plus absolute paths, rewritten by `.bashrc` | known edge case | keep; `gs reset` when dirty; see 6.8 |
-| `~/.gitconfig.local` | ignored local file | one key; not load-bearing | machine local | keep ignored; do not rely on it |
+| `~/.gitconfig` | symlink | shared; host-neutral `~/` paths | immutable shared | keep; writer removed; see 6.8 |
+| `~/.gitconfig.local` | ignored local file | one key, now redundant | machine local | keep ignored; do not rely on it |
 | `~/.gitmessage` | symlink | shared | immutable shared | keep |
 | `~/.my_profiles.json` | symlink | likely machine AWS profiles | machine (verify) | machine overlay or local ignore; check sensitivity |
 | `~/.vimrc` | symlink, after a real copy on the reviewed host | shared plus feature drift | immutable shared | keep, and the link is restored |
@@ -736,7 +763,7 @@ Use a hybrid:
   central config file, directory name as target path, `.target` dotfile per
   directory.
 
-### 9.2 New (proposed, pending open questions)
+### 9.2 New (proposed, pending open questions; D16 applied)
 
 - **D4: One branch, many machines.** Machine differences move from branches
   into machine profiles.
@@ -762,6 +789,9 @@ Use a hybrid:
   the real home directory.
 - **D15: Claude Code is retired.** `.claude` is removed, not rendered or
   materialized. Repo-level Claude artifacts are audited separately.
+- **D16: Git config uses the minimal fix, not render.** The repo deletes the
+  `git config --global` writer and uses `~/` paths in the tracked file. An
+  include cannot absorb a write to the tracked file. See section 6.8.
 
 These are proposals. The open questions below decide the details.
 
@@ -797,9 +827,9 @@ These are proposals. The open questions below decide the details.
 - [ ] **Render semantics**: deep merge preserving unmanaged keys as proposed?
   Arrays replace or union for specific keys (`packages`, `enabledModels`,
   `hooks`)? How do we delete a managed key?
-- [ ] **Git config churn**: delete the `git config --global commit.template`
-  line, render `~/.gitconfig` like Pi settings, or keep `_gs reset` as the only
-  remedy?
+- [x] **Git config churn** (resolved): delete the
+  `git config --global commit.template` line and use `~/` paths in the tracked
+  file. See section 6.8.
 - [ ] **Pi managed keys**: which keys are managed versus local? Is `theme` owned
   by `color-theme` only? Are `packages` shared or per-machine?
 - [ ] **Claude removal scope**: remove only the `~/.claude` managed links and
@@ -903,8 +933,9 @@ files were removed and the two live symlinks unlinked.
   during Phase 7, so no per-branch commit is needed now.
 - Audit `homelander/_home` for other committed symlinks. `homelinker` deploys
   them verbatim, so any tracked symlink pointing inside the repo is a defect.
-- Git config churn stays a known edge case. Do not migrate host paths to
-  `~/.gitconfig.local`; see section 6.8.
+- Git config churn is fixed in the working tree. The writer snippet is deleted
+  and the tracked file uses `~/` paths. Commit those two changes. See
+  section 6.8.
 
 ### Phase 4: Generated theme files (done)
 
@@ -1004,12 +1035,14 @@ To be written once the open questions in section 10 are resolved.
 The likely first implementation slice is small and testable:
 
 1. Retire Claude Code and remove `.claude` from the repo. (Done.)
-2. Delete the tracked `.vim/.vim` symlink from every branch.
-3. Add `homelander render` with JSON fixture tests.
-4. Add machine identity and the `_machines` layout.
-5. Move generated theme files out of git. (Done.)
-6. Migrate Pi settings.
-7. Consolidate branches.
+2. Remove the `git config --global commit.template` writer and make the tracked
+   `.gitconfig` host-neutral. (Done in the working tree, not committed.)
+3. Delete the tracked `.vim/.vim` symlink from every branch.
+4. Add `homelander render` with JSON fixture tests.
+5. Add machine identity and the `_machines` layout.
+6. Move generated theme files out of git. (Done.)
+7. Migrate Pi settings.
+8. Consolidate branches.
 
 Do not start with a full rewrite. The current link behavior is working for most
 files. Add the render path alongside it, prove it with tests, then migrate one
