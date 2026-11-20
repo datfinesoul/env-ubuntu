@@ -1071,9 +1071,8 @@ Sampled top-delta files are newest in `voight`: `functions/gs.bash`
 exist on those branches but not in `voight` are retired Claude artifacts and
 `homelander/bla.bash`, a stray copy of `gcd`.
 
-Deleting the branches also removes `.vim/.vim` from 7 of the 12 refs. Five
-remote refs still carry it: `add-claude-github-actions-1756976006143` and the
-four coc.nvim dependabot branches.
+Branch removal is done. Only `main` and `voight` remain, locally and on
+`origin`, so no ref carries `.vim/.vim` anymore.
 
 - Extract the remaining machine differences from `main` and each machine branch
   into machine profiles.
@@ -1086,11 +1085,14 @@ four coc.nvim dependabot branches.
 ### Phase 8: Cleanup
 
 - Remove legacy migration code once every machine has run the new bootstrap.
-- Update `README.md` and `AGENTS.md` with the new model. Remove or replace
-  `CLAUDE.md` if Claude Code is fully retired.
-- Add tests and CI.
-- Remove the manual `materialized_directories` list once the orchestrator can
-  compute materialization from the shared + machine path union.
+  Still pending: `work-mac` has not run the new scripts yet.
+- Update `README.md` and `AGENTS.md` with the new model. Done. `CLAUDE.md` was
+  removed in Phase 2.
+- Add tests. Done: `./test/run.bash`. CI is not used on this repo, so no
+  workflow runs. `linter.yml.off` stays disabled.
+- Keep the manual `materialized_directories` list. `.config/env-ubuntu` and
+  `.pi/agent` mix repository entries with app state, and no path union reveals
+  that. The overlay union adds paths; it cannot remove the list.
 
 ---
 

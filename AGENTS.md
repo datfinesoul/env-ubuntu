@@ -8,6 +8,22 @@ Project settings live in `.pi/settings.json` (committed). They enable skill comm
 
 Pi provides native MCP support. Add an MCP server in `.pi/mcp.json` when the project needs one.
 
+## Home configuration
+
+`bootstrap.bash` assembles the bash dotfiles, renders Pi settings, links shared and machine files, then runs the installers.
+
+- `homelander/_home/` holds shared paths. Each one becomes a symlink under `$HOME`.
+- `homelander/_render/` holds shared JSON bases. `render.bash` merges a base and a machine patch into a real file.
+- `homelander/_machines/<name>/_home/` holds machine paths. They link after the shared tree, so a machine entry wins.
+- `homelander/_machines/<name>/_patch/` holds machine JSON patches.
+- `homelander/<dotfile>/` holds bash snippets. `homelander.bash` assembles them into the dotfile.
+
+Machine identity comes from `--machine`, `ENV_UBUNTU_MACHINE`, or `~/.config/env-ubuntu/machine`. `bootstrap.bash` asks for a profile when none of them is set. `pi-settings.bash` renders the global Pi settings, and `homelinker.bash` links the trees.
+
+Do not symlink a file that an app rewrites. Render it instead. Never track generated output, runtime state, or secrets.
+
+Run `./test/run.bash` after you change a script. It needs `jq` and `shellcheck`.
+
 ## Safety model
 
 Pi's enabled tool list is not a permission sandbox. The boundaries in this file are behavioral controls. Use an isolated environment or a permission-gating extension when you need technical enforcement.
