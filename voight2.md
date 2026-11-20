@@ -1,8 +1,9 @@
 # Homelinker Redesign v2 — Discussion & Plan
 
-Status: discussion draft. Supersedes `voight.md`. Phase 2 (Claude Code removal)
-and Phase 4 (generated theme files) are done. The section 6.8 git-config fix is
-in the working tree and not yet committed. No render code exists yet.
+Status: discussion draft. Supersedes `voight.md`. Phase 2 (Claude Code removal),
+Phase 4 (generated theme files), and Phase 5 (Pi settings render) are done. The
+section 6.8 git-config fix is in the working tree and not yet committed. Pi
+settings are the only render target so far.
 
 Claude Code is being retired. `.claude` is treated as legacy and removed, not
 migrated.
@@ -531,7 +532,7 @@ For non-JSON files:
   copy it, or keep a single shared file.
 - Do not build a generic TOML/INI merge until there is a second real use case.
 
-### 6.6 Pi settings proposal
+### 6.6 Pi settings proposal (done)
 
 | Key(s) | Class | Handling |
 | - | - | - |
@@ -539,8 +540,24 @@ For non-JSON files:
 | `packages` | shared base, machine override | base list; machine patch may provide a full list |
 | `npmCommand` | machine | machine patch |
 | `defaultProvider`, `defaultModel`, `enabledModels`, `modelThinkingLevels` | machine | machine patch |
-| `theme` | local preference | owned by `color-theme`; preserve or apply from local theme file |
+| `theme` | local preference | owned by `color-theme`; never in base or patch |
 | `lastChangelogVersion`, `extensionChangelogVersions` | runtime | never in base or patch; preserved in target |
+
+Implemented as:
+
+- `homelander/_render/.pi/agent/settings.json` holds the shared keys.
+- `homelander/_machines/dell-laptop-linux/_patch/.pi/agent/settings.json` holds
+  the machine keys.
+- `render.bash <base> <patch> <target>` performs the merge in section 6.5.
+- `pi-settings.bash` resolves the machine, calls the render, and records the
+  machine in `~/.config/env-ubuntu/machine`.
+- `bootstrap.bash` runs `pi-settings.bash` after `homelinker.bash`.
+- Tests live in `test/` and run with `./test/run.bash`.
+
+Migration note: a target that is already a dangling symlink has no content to
+preserve. The first render then drops `theme` and the runtime keys. Pi recreates
+the runtime keys. Run `color-theme <name>` to restore the local theme when that
+happens.
 
 `pi install` and Pi itself will still write the live file. After an intentional
 package change, run a `capture`/`diff` command to update the base or machine
@@ -652,7 +669,7 @@ needed now. This file needs no `_render` entry and no `_machines` patch.
 | `~/.config/env-ubuntu/color-theme` | symlink, was tracked | local theme choice | local preference | ignored, and the live file is real now |
 | `~/.config/env-ubuntu/kitty-theme.conf` | symlink, was tracked | generated palette | generated | ignored, and the live file is real now |
 | `~/.config/env-ubuntu/git-theme.gitconfig` | local real file, never tracked | generated | generated | ignored |
-| `~/.pi/agent/settings.json` | symlink | shared + machine + runtime + local | mutable structured | render; no symlink |
+| `~/.pi/agent/settings.json` | real file, rendered | shared + machine + runtime + local | mutable structured | render; done; see 6.6 |
 | `~/.pi/agent/themes/` | materialized links | shared | immutable shared | keep |
 | `~/.pi/agent/aws-assume.json` | untracked | machine security rules | machine local | keep local or seed from machine profile |
 | `~/.pi/agent/auth.json`, `models-store.json`, `trust.json`, `sessions/`, `git/`, `extensions/` | untracked | runtime | runtime | ignore |
@@ -792,6 +809,15 @@ Use a hybrid:
 - **D16: Git config uses the minimal fix, not render.** The repo deletes the
   `git config --global` writer and uses `~/` paths in the tracked file. An
   include cannot absorb a write to the tracked file. See section 6.8.
+- **D17: Render is a standalone script with explicit arguments.**
+  `render.bash <base> <patch> <target>` merges JSON. `pi-settings.bash` declares
+  the Pi mapping and resolves the machine. A unified `homelander` orchestrator
+  is still open.
+- **D18: Machine identity precedence is implemented.** `--machine`,
+  `ENV_UBUNTU_MACHINE`, then `~/.config/env-ubuntu/machine`. An unknown or
+  missing profile fails and lists the available profiles.
+- **D19: `theme` stays local.** `color-theme` owns the key. The shared base and
+  every machine patch leave it out, so a render preserves it.
 
 These are proposals. The open questions below decide the details.
 
@@ -803,7 +829,8 @@ These are proposals. The open questions below decide the details.
 
 - [ ] **Script structure**: one unified `homelander` with subcommands (`link`,
   `render`, `assemble`, `machine`, `doctor`) versus separate scripts behind an
-  orchestrator?
+  orchestrator? Current state: separate `render.bash` and `pi-settings.bash`
+  scripts with explicit arguments (D17).
 - [ ] **Directory naming**: what to call the trees under `homelander/`? `_home`
   is not great. Proposed: `_home`, `_render`, `_machines/<name>/_home`,
   `_machines/<name>/_patch`. Confirm or rename.
@@ -819,19 +846,26 @@ These are proposals. The open questions below decide the details.
 ### New
 
 - [ ] **Machine inventory**: which machines exist, and what are their stable
-  profile names (`work-linux`, `home-linux`, `work-mac`, ...)?
-- [ ] **Machine identity source**: CLI only, env var, local file, or hostname
-  fallback? Where is the local machine file stored?
+  profile names (`work-linux`, `home-linux`, `work-mac`, ...)? Known so far:
+  `dell-laptop-linux`.
+- [x] **Machine identity source** (resolved): `--machine`,
+  `ENV_UBUNTU_MACHINE`, then `~/.config/env-ubuntu/machine`. The resolved name
+  is written back on success (D18).
 - [ ] **Machine profile layout**: `_machines/<name>/_home` plus `_patch` as
   proposed, or a manifest that lists entries and modes?
 - [ ] **Render semantics**: deep merge preserving unmanaged keys as proposed?
   Arrays replace or union for specific keys (`packages`, `enabledModels`,
-  `hooks`)? How do we delete a managed key?
+  `hooks`)? How do we delete a managed key? Implemented: deep merge, arrays
+  replace. The delete policy stays open.
+- [ ] **Render symlink handling**: done for symlinks inside the repo and
+  outside the repo. A dangling symlink has no content, so its keys are lost.
 - [x] **Git config churn** (resolved): delete the
   `git config --global commit.template` line and use `~/` paths in the tracked
   file. See section 6.8.
-- [ ] **Pi managed keys**: which keys are managed versus local? Is `theme` owned
-  by `color-theme` only? Are `packages` shared or per-machine?
+- [x] **Pi managed keys** (resolved): see the table in section 6.6.
+  `packages` is shared, `npmCommand`, `defaultProvider`, `defaultModel`,
+  `enabledModels`, and `modelThinkingLevels` are machine keys. `theme` and the
+  runtime keys stay local.
 - [ ] **Claude removal scope**: remove only the `~/.claude` managed links and
   the home `.claude` tree, or also remove repo-level Claude artifacts
   (`CLAUDE.md`, `installers/claude.manual.bash`, `functions/claude-p.bash`,
@@ -844,9 +878,8 @@ These are proposals. The open questions below decide the details.
   needs no work.
 - [ ] **`.my_profiles.json`**: is it machine-specific, sensitive, or shared?
   Should it move out of the repo?
-- [ ] **Theme flow**: should `color-theme` stop mutating Pi settings and let the
-  render apply the theme from `~/.config/env-ubuntu/color-theme`? Or keep the
-  current behavior and treat `theme` as local?
+- [x] **Theme flow** (resolved): `color-theme` keeps writing `theme` in the
+  live file. The key is local-only and never appears in base or patch (D19).
 - [ ] **Capture/adopt command**: do we need a command to pull intentional live
   changes back into base or machine patch? Or is `diff`/manual edit enough?
 - [ ] **Generated files**: which outputs should be gitignored and regenerated?
@@ -855,8 +888,8 @@ These are proposals. The open questions below decide the details.
   profiles without losing feature work? Which branches can be archived?
 - [ ] **Secrets policy**: add a pre-commit guard for credentials, tokens, and
   private AWS profile names? Which paths are forbidden?
-- [ ] **Testing**: plain bash test runner or `bats`? Which cases run in CI? Do we
-  add a macOS runner?
+- [x] **Testing** (resolved for now): a plain bash runner at `./test/run.bash`
+  with a temporary `$HOME`. CI stays open.
 - [ ] **Backward compatibility**: keep `homelinker.bash` and `homelander.bash`
   wrappers indefinitely, or deprecate after one migration cycle?
 - [ ] **Legacy migration code**: when can `is_managed_container` and the legacy
@@ -903,13 +936,14 @@ To be refined after the open questions, but the current goals are:
 - Verify the classification table in section 7 against every tracked path under
   `homelander/_home`.
 
-### Phase 1: Machine identity and layout
+### Phase 1: Machine identity and layout (partly done)
 
-- Add `--machine` and `ENV_UBUNTU_MACHINE`.
+- Add `--machine` and `ENV_UBUNTU_MACHINE`. Done.
 - Add `_machines/<name>/_home` and `_machines/<name>/_patch` skeletons for the
-  current machines.
-- Fail clearly when the profile is missing; do not guess.
-- Write the selected machine to `~/.config/env-ubuntu/machine` on success.
+  current machines. Partly done: `_machines/dell-laptop-linux/_patch` exists, no
+  `_home` overlay yet, and no other machine has a profile.
+- Fail clearly when the profile is missing; do not guess. Done.
+- Write the selected machine to `~/.config/env-ubuntu/machine` on success. Done.
 
 ### Phase 2: Retire Claude Code (done)
 
@@ -951,15 +985,23 @@ files were removed and the two live symlinks unlinked.
   also rewrites `settings.json` through the tracked symlink, so this check
   waits for Phase 5.
 
-### Phase 5: Pi settings
+### Phase 5: Pi settings (done)
 
-- Create `_render/.pi/agent/settings.json` from shared keys.
-- Create machine patches for provider/model/enabledModels/npmCommand/packages.
-- Stop symlinking `~/.pi/agent/settings.json`; render it.
-- Ensure `lastChangelogVersion` and `extensionChangelogVersions` are never in
-  base or patch.
-- Decide whether `theme` is local-only or applied from the local theme file.
-- Verify Pi starts, `color-theme` works, and a second render is idempotent.
+- Created `_render/.pi/agent/settings.json` from the shared keys.
+- Created the machine patch
+  `_machines/dell-laptop-linux/_patch/.pi/agent/settings.json` for
+  `defaultProvider`, `defaultModel`, `enabledModels`, `modelThinkingLevels`, and
+  `npmCommand`. `packages` stays in the shared base.
+- Removed the tracked symlink target. `render.bash` and `pi-settings.bash`
+  replace the live symlink with a regular file on the first run.
+- `lastChangelogVersion` and `extensionChangelogVersions` are absent from the
+  base and the patch, so they stay in the live file.
+- `theme` is local-only (D19).
+- Verified on this host: the live file keeps `theme` and 14
+  `extensionChangelogVersions` entries, a second render reports `unchanged`,
+  `color-theme remarkable` leaves `git status` clean, and `./test/run.bash`
+  passes 37 checks.
+- Not verified: a full Pi restart against the rendered file.
 
 ### Phase 6: AWS Assume and other machine-local config
 
@@ -992,7 +1034,8 @@ files were removed and the two live symlinks unlinked.
 ## 13. Testing Strategy
 
 Use a temporary `$HOME` for every test. The test harness must fail if it detects
-the real home directory.
+the real home directory. Run the suite with `./test/run.bash`. It is a plain bash
+runner, so no extra dependency is needed. `jq` and `shellcheck` are required.
 
 Suggested cases:
 
@@ -1012,6 +1055,9 @@ Suggested cases:
 13. Missing machine profile fails with a helpful message and a profile list.
 14. Dry-run makes no changes.
 15. No secret path is ever copied or tracked.
+
+Cases 6–11, 13, and 14 are implemented in `test/`. Cases 1–5, 12, and 15 need
+the link migration first.
 
 Test fixtures:
 
@@ -1038,10 +1084,12 @@ The likely first implementation slice is small and testable:
 2. Remove the `git config --global commit.template` writer and make the tracked
    `.gitconfig` host-neutral. (Done in the working tree, not committed.)
 3. Delete the tracked `.vim/.vim` symlink from every branch.
-4. Add `homelander render` with JSON fixture tests.
-5. Add machine identity and the `_machines` layout.
+4. Add `homelander render` with JSON fixture tests. (Done as `render.bash` plus
+   `./test/run.bash`.)
+5. Add machine identity and the `_machines` layout. (Partly done: identity,
+   `--machine`, and one patch profile.)
 6. Move generated theme files out of git. (Done.)
-7. Migrate Pi settings.
+7. Migrate Pi settings. (Done.)
 8. Consolidate branches.
 
 Do not start with a full rewrite. The current link behavior is working for most

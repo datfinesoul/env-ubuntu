@@ -29,6 +29,7 @@ fi
 "${script_dir}/homelander.bash" .bashrc
 "${script_dir}/homelander.bash" .bash_logout
 "${script_dir}/homelinker.bash"
+"${script_dir}/pi-settings.bash"
 
 function cleanup {
   ls /tmp/*.log

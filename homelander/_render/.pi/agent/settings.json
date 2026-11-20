@@ -1,0 +1,19 @@
+{
+  "hideThinkingBlock": true,
+  "tuiMode": "fullscreen",
+  "treeFilterMode": "default",
+  "showCacheMissNotices": true,
+  "outputPad": 0,
+  "markdown": {
+    "codeBlockIndent": ""
+  },
+  "packages": [
+    "git:github.com/datfinesoul/pi-prompt-filter",
+    "git:github.com/datfinesoul/pi-prompt-snippets",
+    "git:github.com/datfinesoul/pi-code-block-copy",
+    "git:github.com/datfinesoul/pi-aws-assume",
+    "git:github.com/datfinesoul/pi-watch",
+    "git:github.com/datfinesoul/pi-questions",
+    "git:github.com/datfinesoul/pi-focus-mode"
+  ]
+}

@@ -12,6 +12,21 @@ cd env-ubuntu
 ./bootstrap.bash
 ```
 
+### Machine profile
+
+`bootstrap.bash` renders `~/.pi/agent/settings.json` from `homelander/_render/`
+plus one machine patch under `homelander/_machines/`.
+
+Select the machine with `--machine`, `ENV_UBUNTU_MACHINE`, or
+`~/.config/env-ubuntu/machine`. Without a profile the render fails and lists the
+available profiles.
+
+```bash
+./pi-settings.bash --machine dell-laptop-linux
+```
+
+Run `./test/run.bash` after you change the render scripts.
+
 ## `gh` CLI
 
 ```bash

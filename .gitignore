@@ -12,5 +12,8 @@
 /homelander/_home/.config/env-ubuntu/kitty-theme.conf
 /homelander/_home/.config/env-ubuntu/git-theme.gitconfig
 
+# Machine profile selected by pi-settings.bash on this host.
+/homelander/_home/.config/env-ubuntu/machine
+
 .pi/npm/
 .pi/git/
