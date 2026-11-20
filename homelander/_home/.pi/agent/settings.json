@@ -1,10 +1,11 @@
 {
-  "lastChangelogVersion": "1.4.0",
+  "lastChangelogVersion": "1.5.2",
   "theme": "remarkable",
   "defaultProvider": "github-copilot",
   "defaultModel": "gpt-6.1-sol",
   "enabledModels": [
     "github-copilot/gpt-6.1-sol",
+    "github-copilot/gpt-6.2-sol",
     "github-copilot/claude-opus-5.5",
     "github-copilot/gpt-6-luna"
   ],
@@ -16,6 +17,7 @@
     "github-copilot/gpt-6-luna": "max",
     "github-copilot/gpt-6-sol": "low",
     "github-copilot/gpt-6.1-sol": "low",
+    "github-copilot/gpt-6.2-sol": "low",
     "github-copilot/claude-opus-5.5": "medium"
   },
   "treeFilterMode": "default",
@@ -26,10 +28,29 @@
     "git:github.com/datfinesoul/pi-code-block-copy",
     "git:github.com/datfinesoul/pi-aws-assume",
     "npm:@grafana/agento11y-pi",
-    "git:github.com/datfinesoul/pi-watch"
+    "git:github.com/datfinesoul/pi-watch",
+    "git:github.com/datfinesoul/pi-questions",
+    "git:github.com/datfinesoul/pi-focus-mode"
   ],
   "outputPad": 0,
   "markdown": {
     "codeBlockIndent": ""
+  },
+  "extensionChangelogVersions": {
+    "{\"source\":\"../pi-watch\",\"scope\":\"project\"}": "0.6.0",
+    "{\"source\":\"../pi-aws-assume\",\"scope\":\"project\"}": "0.5.0",
+    "{\"source\":\"../pi-prompt-filter\",\"scope\":\"project\"}": "0.3.1",
+    "{\"source\":\"../pi-prompt-snippets\",\"scope\":\"project\"}": "0.4.1",
+    "{\"source\":\"../pi-code-block-copy\",\"scope\":\"project\"}": "0.6.0",
+    "{\"source\":\"git:github.com/datfinesoul/pi-prompt-filter\",\"scope\":\"user\"}": "0.3.1",
+    "{\"source\":\"git:github.com/datfinesoul/pi-prompt-snippets\",\"scope\":\"user\"}": "0.4.1",
+    "{\"source\":\"git:github.com/datfinesoul/pi-code-block-copy\",\"scope\":\"user\"}": "0.6.0",
+    "{\"source\":\"git:github.com/datfinesoul/pi-aws-assume\",\"scope\":\"user\"}": "0.4.1",
+    "{\"source\":\"git:github.com/datfinesoul/pi-watch\",\"scope\":\"user\"}": "0.6.0",
+    "{\"source\":\"../pi-model-info\",\"scope\":\"project\"}": "0.1.0",
+    "{\"source\":\"../pi-questions\",\"scope\":\"project\"}": "0.5.1",
+    "{\"source\":\"git:github.com/datfinesoul/pi-questions\",\"scope\":\"user\"}": "0.5.1",
+    "{\"source\":\"../pi-focus-mode\",\"scope\":\"project\"}": "0.2.0",
+    "{\"source\":\"git:github.com/datfinesoul/pi-focus-mode\",\"scope\":\"user\"}": "0.2.0"
   }
 }

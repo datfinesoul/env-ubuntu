@@ -83,6 +83,7 @@
 	merged = branch -r --merged
 	; Rebase preserving commit dates
 	rebase-preserve = rebase --committer-date-is-author-date
+	rp = rebase --committer-date-is-author-date
 	; Show your own commits with file names
 	own = "!git lg --name-only --author=\"$(git config user.name)\""
 	; Show contributor statistics

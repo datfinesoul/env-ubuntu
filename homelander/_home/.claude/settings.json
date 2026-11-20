@@ -29,5 +29,6 @@
   "effortLevel": "low",
   "tui": "fullscreen",
   "theme": "light-ansi",
-  "autoCompactEnabled": false
+  "autoCompactEnabled": false,
+  "hooks": {}
 }
