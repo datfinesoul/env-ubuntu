@@ -1050,6 +1050,31 @@ selectively, because a plain merge would restore retired files:
   Claude paths and on the Pi settings file. Keep them deleted. `git merge -s
   ours origin/main` records the merge without changing content.
 
+Branch classification (read-only review). Every branch other than `voight` and
+`main` is content-superseded:
+
+| Branch | Unique commits | Verdict |
+| - | - | - |
+| `ai-tool-stuff` | 7 | Feature work is in `voight`; Claude settings are retired |
+| `fix-vim` | 28 | Vim and installer content is older than `voight` |
+| `fixes` | 5 | All touched files are newer in `voight` |
+| `gs-up` | 48 | `gs.bash` refactor is newer in `voight` |
+| `home-config-conflict` | 0 | Nothing to keep |
+| `new-stuff` | 16 | Claude artifacts plus work already in `voight` |
+| `scripts-from-functions` | 8 | `bin` to `scripts` move and traps are in `voight` |
+| `the-mac` | 44 | Mac config and older script versions |
+
+Sampled top-delta files are newest in `voight`: `functions/gs.bash`
+(2026-07-12), `installers/deskreen.manual.install`,
+`installers/granted-cli.manual.bash`, `installers/meld.manual.bash`,
+`homelander/_home/.vimrc`, and `homelander/_home/.gitconfig`. The only files that
+exist on those branches but not in `voight` are retired Claude artifacts and
+`homelander/bla.bash`, a stray copy of `gcd`.
+
+Deleting the branches also removes `.vim/.vim` from 7 of the 12 refs. Five
+remote refs still carry it: `add-claude-github-actions-1756976006143` and the
+four coc.nvim dependabot branches.
+
 - Extract the remaining machine differences from `main` and each machine branch
   into machine profiles.
 - Merge genuine feature drift (starship modules, Vim theme sync, kitty tab
