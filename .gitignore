@@ -7,5 +7,10 @@
 /homelander/_home/.gitconfig.local
 /homelander/_home/.config/coc/memos.json
 
+# color-theme output. Generated from themes/ and local to this host.
+/homelander/_home/.config/env-ubuntu/color-theme
+/homelander/_home/.config/env-ubuntu/kitty-theme.conf
+/homelander/_home/.config/env-ubuntu/git-theme.gitconfig
+
 .pi/npm/
 .pi/git/

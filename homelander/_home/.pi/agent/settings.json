@@ -46,6 +46,7 @@
     "{\"source\":\"git:github.com/datfinesoul/pi-watch\",\"scope\":\"user\"}": "0.6.0",
     "{\"source\":\"../pi-questions\",\"scope\":\"project\"}": "0.3.0",
     "{\"source\":\"git:github.com/datfinesoul/pi-questions\",\"scope\":\"user\"}": "0.5.1",
-    "{\"source\":\"git:github.com/datfinesoul/pi-focus-mode\",\"scope\":\"user\"}": "0.2.0"
+    "{\"source\":\"git:github.com/datfinesoul/pi-focus-mode\",\"scope\":\"user\"}": "0.2.0",
+    "{\"source\":\"../pi-focus-mode\",\"scope\":\"project\"}": "0.1.0"
   }
 }
