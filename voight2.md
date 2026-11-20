@@ -484,13 +484,18 @@ Precedence, highest first:
 2. `ENV_UBUNTU_MACHINE` environment variable.
 3. `~/.config/env-ubuntu/machine` local file (written on first successful
    bootstrap).
-4. Hostname mapping, only if a profile with that exact name exists.
+4. Interactive prompt in `bootstrap.bash` when the three sources above are
+   empty. It lists the available profiles and reads the choice from `/dev/tty`.
+
+Hostname mapping is not implemented.
 
 Rules:
 
 - Use stable names (`work-linux`, `home-linux`, `work-mac`), not hostnames that
   change with DHCP or renaming.
 - If no profile matches, fail with a list of available profiles. Do not guess.
+- Without an interactive terminal, the prompt fails and names
+  `ENV_UBUNTU_MACHINE` as the alternative.
 - Warn if the profile name suggests an OS that does not match `uname -s`.
 - Tests pass the machine explicitly.
 
@@ -953,6 +958,7 @@ To be refined after the open questions, but the current goals are:
   profile.
 - Fail clearly when the profile is missing; do not guess. Done.
 - Write the selected machine to `~/.config/env-ubuntu/machine` on success. Done.
+- Ask for a profile in `bootstrap.bash` when no source selects one. Done.
 
 ### Phase 2: Retire Claude Code (done)
 

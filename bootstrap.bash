@@ -7,6 +7,8 @@ IFS=$'\n\t'
 
 # shellcheck disable=SC1091
 source "$(dirname "${0}")/_core.bash"
+# shellcheck disable=SC1091
+source "$(dirname "${0}")/machine.bash"
 
 # this is supposed to confirm a version of readlink is in the path
 type -t readlink
@@ -28,6 +30,14 @@ if [[ "${kernel_name}" == 'Darwin' ]]; then
 fi
 "${script_dir}/homelander.bash" .bashrc
 "${script_dir}/homelander.bash" .bash_logout
+# Ask for a profile when nothing is selected yet, then export the name so the
+# render and the overlay use the same machine.
+machine_name="$(require_machine)" || {
+  fail "no machine profile selected"
+  fail "set ENV_UBUNTU_MACHINE or add homelander/_machines/<name>"
+  exit 1
+}
+export ENV_UBUNTU_MACHINE="${machine_name}"
 # Render first so the machine record exists before the overlay is linked.
 "${script_dir}/pi-settings.bash"
 "${script_dir}/homelinker.bash"

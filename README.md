@@ -18,8 +18,9 @@ cd env-ubuntu
 plus one machine patch under `homelander/_machines/`.
 
 Select the machine with `--machine`, `ENV_UBUNTU_MACHINE`, or
-`~/.config/env-ubuntu/machine`. Without a profile the render fails and lists the
-available profiles.
+`~/.config/env-ubuntu/machine`. `bootstrap.bash` asks for a profile when none of
+those is set. Without a profile the render fails and lists the available
+profiles.
 
 ```bash
 ./pi-settings.bash --machine dell-laptop-linux

@@ -15,8 +15,9 @@ machine_root="${script_dir}/homelander/_machines"
 machine_record="${HOME}/.config/env-ubuntu/machine"
 
 available_machines() {
+	local root="${1:-${machine_root}}"
 	local entry
-	for entry in "${machine_root}"/*/; do
+	for entry in "${root}"/*/; do
 		[[ -d "${entry}" ]] || continue
 		basename "${entry}"
 	done | sort
@@ -35,4 +36,47 @@ resolve_machine() {
 	fi
 
 	printf '%s' "${resolved}"
+}
+
+# Asks for a profile when none is selected. Prints the chosen name on stdout
+# and keeps the menu on stderr, so callers can capture the name.
+prompt_machine() {
+	local name
+	local -a profiles=()
+
+	while IFS= read -r name; do
+		profiles+=("${name}")
+	done < <(available_machines "${machine_root}")
+
+	if [[ "${#profiles[@]}" -eq 0 ]]; then
+		fail "no machine profiles exist under ${machine_root}"
+		return 1
+	fi
+	if ! { : < /dev/tty; } 2>/dev/null; then
+		fail "no interactive terminal for a machine prompt"
+		return 1
+	fi
+
+	info "select a machine profile"
+	select name in "${profiles[@]}"; do
+		if [[ -n "${name}" ]]; then
+			printf '%s' "${name}"
+			return 0
+		fi
+		fail "invalid selection"
+	done < /dev/tty
+	return 1
+}
+
+# Returns the selected profile. Prompts when nothing is selected yet.
+require_machine() {
+	local explicit="${1:-}"
+	local resolved
+
+	resolved="$(resolve_machine "${explicit}")"
+	if [[ -n "${resolved}" ]]; then
+		printf '%s' "${resolved}"
+		return 0
+	fi
+	prompt_machine
 }
