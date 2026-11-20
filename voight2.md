@@ -1,6 +1,7 @@
 # Homelinker Redesign v2 — Discussion & Plan
 
-Status: discussion draft. Supersedes `voight.md`; no implementation yet.
+Status: discussion draft. Supersedes `voight.md`. Phase 2 (Claude Code removal)
+and Phase 4 (generated theme files) are done. No render code exists yet.
 
 Claude Code is being retired. `.claude` is treated as legacy and removed, not
 migrated.
@@ -107,15 +108,26 @@ Mixed directories are more complicated:
 materialized: `.netrwhist` stays local, managed entries are linked beside it,
 and `is_managed_container` never runs for it. No skip occurs.
 
+`~/.vimrc` was a real file, not a symlink, when this draft was reviewed. Its
+content matched `homelander/_home/.vimrc`, so no local edit was lost.
+`homelinker` links a target only when the target is missing or already a
+symlink. A regular file stays in place and the script logs `fail "skip"`. The
+live link is restored now, so repository edits reach the file again.
+
 `~/.vim/.vim` is a separate problem. The repo tracks a symlink at
 `homelander/_home/.vim/.vim` whose content is
 `./env-ubuntu/homelander/_home/.vim`. `homelinker` deploys tracked symlinks
 verbatim, so any checkout of a branch containing that file recreates a broken
-`~/.vim/.vim` link. It was added in `63624425` (2024-09-07) and is present on
-`ai-tool-stuff`, `fix-vim`, `fixes`, `gs-up`, `new-stuff`,
-`scripts-from-functions`, `the-mac`, and `origin/add-claude-github-actions-*`.
+`~/.vim/.vim` link. It was added in `63624425` (2024-09-07) and is present on 12
+refs:
+
+- seven local branches: `ai-tool-stuff`, `fix-vim`, `fixes`, `gs-up`,
+  `new-stuff`, `scripts-from-functions`, `the-mac`
+- `origin/add-claude-github-actions-*`
+- four `origin/dependabot/npm_and_yarn/...coc.nvim...` branches
+
 It is absent from `main` and `home-config-conflict`. This is committed cruft,
-not a script defect, and it must be deleted from each branch that carries it.
+not a script defect. Delete it from each ref that carries it.
 
 `~/.claude` was the same materialized pattern, but it is retired. The tracked
 tree and the two live links are removed; local app data is untouched.
@@ -223,8 +235,10 @@ The shared file contains host-specific absolute paths:
 
 The tracked file already includes `~/.gitconfig.local` (line 124) and
 `~/.config/env-ubuntu/git-theme.gitconfig` (line 127). `~/.gitconfig.local`
-exists, is gitignored, and holds a single key. The include does not solve the
-problem, and the local file is not load-bearing.
+exists, is gitignored, and holds one key: `commit.template`, with the same
+absolute path as the tracked file. The include does not solve the problem, and
+the local key never takes effect. Git applies a key that appears after an
+include, and the tracked `[commit]` block at line 143 sets the same key.
 
 The mechanism that dirties the repo is in the shell configuration, not in a
 human edit. `homelander/.bashrc/git-config.bash` contains exactly one line and
@@ -235,9 +249,14 @@ git config --global commit.template "${HOME}/.gitmessage"
 ```
 
 `git config --global` writes the global file itself, which is the symlink into
-the repo. Git only reads an `[include]` target, so a local include can never
-absorb that write. Whenever `$HOME` differs from the committed value, each
-shell start rewrites the file and the working tree is dirty again.
+the repo. Git follows the link and changes the tracked file, and the link stays
+a link. Git only reads an `[include]` target, so a local include can never
+absorb that write.
+
+A write with an unchanged value leaves the file byte-identical. This host
+therefore stays clean, because `$HOME` equals the committed path. A host whose
+`$HOME` differs dirties the tree on the first interactive shell. Git expands
+`~/` in both keys, so a host-neutral tracked file is possible.
 `_gs/reset.bash` restores the tracked copy with `git reset` plus
 `git checkout`, and is the current escape hatch.
 
@@ -257,10 +276,13 @@ of a symlink.
 ~/.pi/agent/settings.json                 mutates .theme (through the symlink)
 ```
 
-Three of those are currently tracked (`color-theme`, `kitty-theme.conf`, and
-`settings.json`). Running `color-theme` can therefore dirty the repo and commit
-a local preference. The tracked `themes/` files are the real source;
-`~/.config/env-ubuntu/` outputs are generated.
+`color-theme` and `kitty-theme.conf` were tracked when this draft started. They
+are untracked and gitignored now. `settings.json` is still tracked and is still
+a symlink, so a `color-theme` run still changes the repo. The command rewrites
+`settings.json` with `jq`, and `jq` adds a final newline that the tracked file
+does not have. Even an unchanged theme value therefore writes a diff. The
+tracked `themes/` files are the real source; `~/.config/env-ubuntu/` outputs are
+generated.
 
 ### 3.5 Pi AWS Assume
 
@@ -278,18 +300,21 @@ config needs. Do not invent a parallel merge for it.
 
 For this repo, there is no `.pi/aws-assume.json`, so the extension is disabled
 here. That is a deliberate project-scope decision, not a bug in this repo. Add
-a policy only if this repo needs AWS access. The global file is machine-local
-and may contain private profile names.
+a policy only if this repo needs AWS access. The reviewed machine has no
+`~/.pi/agent/aws-assume.json` either, so no global rule library exists yet. The
+global file is machine-local and may contain private profile names.
 
 ### 3.6 Branch drift versus machine drift
 
-`git diff main..HEAD` shows about 20 files, but they are not all machine drift.
-Some are feature work that should merge to `main` and be shared:
+`git diff main..HEAD` shows 41 files, and they are not all machine drift. Some
+are feature work that should merge to `main` and be shared:
 
-- `starship.toml` custom repo-path modules
+- `starship.toml` custom repo-path modules, with `scripts/starship-repo-path.bash`
 - `.vimrc` theme synchronization and truecolor support
 - `kitty.conf` tab title and remote-control socket
-- installers and scripts
+- `AGENTS.md` and `docs/remarkable-color-map.py` with its PNG
+- installers: `cursor-theme`, `gcx`, `orca`, `tmog`, and one `1_brew.packages` line
+- `functions/ghclone.bash`, `scripts/history-compression.bash`, `themes/kitty/remarkable.conf`
 
 Others are genuinely machine-specific:
 
@@ -545,12 +570,17 @@ Decision: stop treating this as a quick win. Keep the current wiring, keep
 render mode exists; `~/.gitconfig` is then a render candidate, not an include
 candidate.
 
-If a minimal fix is wanted sooner: delete the single line in
+If a minimal fix is wanted sooner, delete the single line in
 `homelander/.bashrc/git-config.bash`, because the tracked file already sets
-`commit.template`. That stops the writer but leaves the absolute path in the
-tracked file, so the host value is still wrong on another machine.
+`commit.template`. That stops the writer. Then change the two absolute paths to
+`~/` forms. Git expands `~/` in `commit.template` and in `core.excludesFile`, so
+the tracked file becomes host-neutral. Verify with
+`git config --path commit.template` and `git config --path core.excludesFile`.
+No render is needed for this file. Deleting the writer alone is not enough,
+because the writer writes an absolute path, so the file must also lose its host
+dependence.
 
-### 6.9 Generated theme proposal
+### 6.9 Generated theme proposal (done)
 
 - Keep `themes/kitty/*.conf` and `themes/git/*.gitconfig` as shared source.
 - Move `~/.config/env-ubuntu/color-theme`, `kitty-theme.conf`, and
@@ -584,7 +614,7 @@ tracked file, so the host value is still wrong on another machine.
 | `~/.gitconfig.local` | ignored local file | one key; not load-bearing | machine local | keep ignored; do not rely on it |
 | `~/.gitmessage` | symlink | shared | immutable shared | keep |
 | `~/.my_profiles.json` | symlink | likely machine AWS profiles | machine (verify) | machine overlay or local ignore; check sensitivity |
-| `~/.vimrc` | symlink | shared plus feature drift | immutable shared | keep |
+| `~/.vimrc` | symlink, after a real copy on the reviewed host | shared plus feature drift | immutable shared | keep, and the link is restored |
 | `~/.vim/` | real dir (depth 1 is always materialized) | shared plus feature drift | immutable shared | keep; `.netrwhist` stays local |
 | `~/.vim/.vim` | broken link deployed from a tracked symlink | committed cruft | remove | live link removed; delete from branches in Phase 7 |
 | `~/.config/base16-shell/` | whole-dir link | shared | immutable shared | keep |
@@ -592,9 +622,9 @@ tracked file, so the host value is still wrong on another machine.
 | `~/.config/coc/` | whole-dir link | shared; `memos.json` local | immutable shared | keep; memo file ignored |
 | `~/.config/kitty/` | whole-dir link | shared; paths use `$HOME` | immutable shared | keep; use `include` for local overrides |
 | `~/.config/starship.toml` | symlink | shared plus feature drift | immutable shared | keep; machine override via `STARSHIP_CONFIG` if needed |
-| `~/.config/env-ubuntu/color-theme` | tracked symlink | local theme choice | local preference | gitignore; keep local |
-| `~/.config/env-ubuntu/kitty-theme.conf` | tracked file | generated palette | generated | gitignore; regenerate |
-| `~/.config/env-ubuntu/git-theme.gitconfig` | local real file | generated | generated | gitignore explicitly |
+| `~/.config/env-ubuntu/color-theme` | symlink, was tracked | local theme choice | local preference | ignored, and the live file is real now |
+| `~/.config/env-ubuntu/kitty-theme.conf` | symlink, was tracked | generated palette | generated | ignored, and the live file is real now |
+| `~/.config/env-ubuntu/git-theme.gitconfig` | local real file, never tracked | generated | generated | ignored |
 | `~/.pi/agent/settings.json` | symlink | shared + machine + runtime + local | mutable structured | render; no symlink |
 | `~/.pi/agent/themes/` | materialized links | shared | immutable shared | keep |
 | `~/.pi/agent/aws-assume.json` | untracked | machine security rules | machine local | keep local or seed from machine profile |
@@ -780,7 +810,8 @@ These are proposals. The open questions below decide the details.
   sessions, projects), or leave it untouched after unlinking managed files?
 - [ ] **AWS Assume global file**: track it, seed it from a machine profile, or
   leave it local forever? Are profile names sensitive? Which projects get
-  policies?
+  policies? No global file exists on the reviewed machine, so "leave it local"
+  needs no work.
 - [ ] **`.my_profiles.json`**: is it machine-specific, sensitive, or shared?
   Should it move out of the repo?
 - [ ] **Theme flow**: should `color-theme` stop mutating Pi settings and let the
@@ -868,22 +899,26 @@ files were removed and the two live symlinks unlinked.
 ### Phase 3: Remove committed artifacts (low risk)
 
 - The broken live link `~/.vim/.vim` is removed. The tracked
-  `homelander/_home/.vim/.vim` symlink stays on its eight refs and is deleted
+  `homelander/_home/.vim/.vim` symlink stays on its 12 refs and is deleted
   during Phase 7, so no per-branch commit is needed now.
 - Audit `homelander/_home` for other committed symlinks. `homelinker` deploys
   them verbatim, so any tracked symlink pointing inside the repo is a defect.
 - Git config churn stays a known edge case. Do not migrate host paths to
   `~/.gitconfig.local`; see section 6.8.
 
-### Phase 4: Generated theme files
+### Phase 4: Generated theme files (done)
 
-- Replace the live symlinks for `color-theme`, `kitty-theme.conf`, and
-  `git-theme.gitconfig` with real local files.
-- Remove those files from tracking; add them to `.gitignore`.
-- Keep `themes/kitty/*` and `themes/git/*` as source.
-- Adjust `color-theme` if needed so a missing local file is handled.
-- Verify that `color-theme default` and `color-theme remarkable` leave
-  `git status` clean.
+- Replaced the live symlinks for `color-theme` and `kitty-theme.conf` with real
+  local files. Done. `git-theme.gitconfig` was already a real file.
+- Removed `color-theme` and `kitty-theme.conf` from tracking, and added all
+  three paths to `.gitignore`. Done.
+- Kept `themes/kitty/*` and `themes/git/*` as source. Done.
+- `color-theme` needs no change. It creates a missing directory and rewrites
+  all three files on each run.
+- Verified that writing the three output files leaves `git status` clean.
+- Not verified: `color-theme default` and `color-theme remarkable`. The command
+  also rewrites `settings.json` through the tracked symlink, so this check
+  waits for Phase 5.
 
 ### Phase 5: Pi settings
 
@@ -972,7 +1007,7 @@ The likely first implementation slice is small and testable:
 2. Delete the tracked `.vim/.vim` symlink from every branch.
 3. Add `homelander render` with JSON fixture tests.
 4. Add machine identity and the `_machines` layout.
-5. Move generated theme files out of git.
+5. Move generated theme files out of git. (Done.)
 6. Migrate Pi settings.
 7. Consolidate branches.
 
