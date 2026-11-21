@@ -1,6 +1,0 @@
-version: 2
-updates:
-  - package-ecosystem: "npm"
-    directory: "/home/.vim/pack/datfinesoul/start/coc.nvim/"
-    ignore:
-      dependency-type: "all"

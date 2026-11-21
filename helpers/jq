@@ -1,2 +1,0 @@
-# drift ticket
-jq -r '.[] | .name + "\n- " + .url + "\n"'
