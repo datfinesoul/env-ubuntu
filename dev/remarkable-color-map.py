@@ -2,8 +2,8 @@
 """Render a per-app color map for the reMarkable theme.
 
 Reads the same palette and app settings that `color_theme remarkable` applies.
-Run it from any directory: python3 docs/remarkable-color-map.py
-It writes docs/remarkable-color-map.png next to this script.
+Run it from any directory: python3 dev/remarkable-color-map.py
+It writes remarkable-color-map.png next to this script.
 Requires Pillow and the DejaVu fonts.
 """
 from pathlib import Path
