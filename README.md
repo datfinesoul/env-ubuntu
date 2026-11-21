@@ -31,6 +31,14 @@ machine entry wins for the path it covers.
 
 Run `./test/run.bash` after you change the render or link scripts.
 
+## Patches
+
+`patches/` holds `git format-patch` exports of edits that must survive a re-sync of vendored content under `homelander/_home/`.
+
+- `0001-monkeypatch-json-inline-problem.patch` comments out `runtime! ftplugin/json.vim` in `vim-polyglot/syntax/json.vim`. See [elzr/vim-json#42](https://github.com/elzr/vim-json/issues/42).
+
+The edit is already in the tracked file. Read the patch only when you replace vim-polyglot with `git subtree`, then make the same edit by hand. The patch uses the old `home/` paths, so `git am` and `git apply` fail on the current tree.
+
 ## `gh` CLI
 
 ```bash

@@ -2,7 +2,7 @@
 # Shared helpers for the plain-bash test suite.
 #
 # Every test runs with a temporary $HOME. The helper refuses to run when $HOME
-# still points at the real home directory (voight2.md section 13).
+# still points at the real home directory, so a test never touches live dotfiles.
 #
 # shellcheck shell=bash disable=SC2034
 

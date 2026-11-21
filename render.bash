@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Renders a JSON settings file from a shared base and a machine patch.
 #
-# Contract (voight2.md section 6.5):
+# Contract:
 #   desired = deep_merge(base, patch)      # patch wins, arrays replace
 #   result  = deep_merge(target, desired)  # desired wins, target-only keys stay
 #
