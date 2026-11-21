@@ -16,6 +16,12 @@ color_theme() {
   local git_theme
   local git_theme_file="${config_dir}/git-theme.gitconfig"
   local bat_theme
+  local btop_theme
+  local btop_theme_name
+  local btop_theme_dir="${HOME}/.config/btop/themes"
+  local btop_config_file="${HOME}/.config/btop/btop.conf"
+  local btop_config_tmp="${TMPDIR:-/tmp}/env-ubuntu-btop.$$"
+  local btop_note=""
 
   case "${theme}" in
     default)
@@ -24,6 +30,8 @@ color_theme() {
       kitty_theme="${repo_root}/themes/kitty/default.conf"
       git_theme="${repo_root}/themes/git/default.gitconfig"
       bat_theme="1337"
+      btop_theme="${repo_root}/themes/btop/default.theme"
+      btop_theme_name="env-ubuntu-default"
       ;;
     remarkable)
       palette="${HOME}/.config/base16-shell/base16-remarkable.light.sh"
@@ -31,6 +39,8 @@ color_theme() {
       kitty_theme="${repo_root}/themes/kitty/remarkable.conf"
       git_theme="${repo_root}/themes/git/remarkable.gitconfig"
       bat_theme="ansi"
+      btop_theme="${repo_root}/themes/btop/remarkable.theme"
+      btop_theme_name="env-ubuntu-remarkable"
       ;;
     *)
       printf 'usage: color-theme {default|remarkable}\n' >&2
@@ -54,6 +64,10 @@ color_theme() {
     printf 'color-theme: Git theme not found: %s\n' "${git_theme}" >&2
     return 1
   fi
+  if command -v btop > /dev/null 2>&1 && [[ ! -r "${btop_theme}" ]]; then
+    printf 'color-theme: btop theme not found: %s\n' "${btop_theme}" >&2
+    return 1
+  fi
   if ! command -v jq > /dev/null 2>&1; then
     printf 'color-theme: jq is required to update Pi settings\n' >&2
     return 1
@@ -72,6 +86,27 @@ color_theme() {
   rm -f "${pi_settings_tmp}"
   cp "${kitty_theme}" "${kitty_theme_file}" || return 1
   cp "${git_theme}" "${git_theme_file}" || return 1
+  if command -v btop > /dev/null 2>&1; then
+    mkdir -p "${btop_theme_dir}" || return 1
+    cp "${btop_theme}" "${btop_theme_dir}/${btop_theme_name}.theme" || return 1
+    if [[ -f "${btop_config_file}" ]]; then
+      # btop rewrites its config, so edit the live file instead of linking it.
+      if ! awk -v value="${btop_theme_name}" '
+        /^color_theme[[:space:]]*=/ { print "color_theme = \"" value "\""; found = 1; next }
+        { print }
+        END { if (!found) print "color_theme = \"" value "\"" }
+      ' "${btop_config_file}" > "${btop_config_tmp}"; then
+        rm -f "${btop_config_tmp}"
+        printf 'color-theme: could not update btop settings: %s\n' "${btop_config_file}" >&2
+        return 1
+      fi
+      mv "${btop_config_tmp}" "${btop_config_file}" || return 1
+    else
+      mkdir -p "$(dirname "${btop_config_file}")" || return 1
+      printf 'color_theme = "%s"\n' "${btop_theme_name}" > "${btop_config_file}" || return 1
+    fi
+    btop_note="${btop_theme_name}"
+  fi
   printf '%s\n' "${theme}" > "${config_file}" || return 1
 
   # shellcheck disable=SC1090
@@ -79,4 +114,7 @@ color_theme() {
   export BAT_THEME="${bat_theme}"
   printf 'Color theme set to %s (Pi: %s, bat: %s, Git delta updated). Restart Vim, Pi, and Kitty to apply it everywhere.\n' \
     "${theme}" "${pi_theme}" "${bat_theme}"
+  if [[ -n "${btop_note}" ]]; then
+    printf 'btop theme %s installed; restart btop to apply it.\n' "${btop_note}"
+  fi
 }

@@ -1,0 +1,70 @@
+# reMarkable Light — btop theme derived from themes/kitty/remarkable.conf
+# Paper surfaces, ink text, and palette accents.
+#
+# All values come from the base16 palette in
+# homelander/_home/.config/base16-shell/base16-remarkable.light.sh.
+
+# Paper background, ink text.
+theme[main_bg]="#e3e1da"
+theme[main_fg]="#292a28"
+
+# Titles and keyboard shortcut highlights use the blue accent.
+theme[title]="#326591"
+theme[hi_fg]="#326591"
+
+# Selected process row: selection paper with ink text.
+theme[selected_bg]="#c5c4bd"
+theme[selected_fg]="#292a28"
+
+# Inactive text stays quiet but readable.
+theme[inactive_fg]="#777873"
+
+# Process details, mini graphs, and status text.
+theme[proc_misc]="#006f76"
+
+# Box outlines: one accent per box, neutral gray for processes.
+theme[cpu_box]="#326591"
+theme[mem_box]="#006f76"
+theme[net_box]="#794982"
+theme[proc_box]="#686964"
+theme[div_line]="#c5c4bd"
+
+# Temperature: green to amber to red.
+theme[temp_start]="#377748"
+theme[temp_mid]="#956600"
+theme[temp_end]="#9c3d34"
+
+# CPU: blue to bright blue to cyan.
+theme[cpu_start]="#326591"
+theme[cpu_mid]="#2d7fb6"
+theme[cpu_end]="#006f76"
+
+# Free memory and disk: paper grays.
+theme[free_start]="#d8d6cf"
+theme[free_mid]="#c5c4bd"
+theme[free_end]="#8a8b85"
+
+# Cached: cyan to bright cyan to blue.
+theme[cached_start]="#006f76"
+theme[cached_mid]="#008790"
+theme[cached_end]="#2d7fb6"
+
+# Available: amber family.
+theme[available_start]="#956600"
+theme[available_mid]="#b57d00"
+theme[available_end]="#aa6025"
+
+# Used: red family.
+theme[used_start]="#9c3d34"
+theme[used_mid]="#bd4034"
+theme[used_end]="#78473d"
+
+# Download: blue family.
+theme[download_start]="#326591"
+theme[download_mid]="#2d7fb6"
+theme[download_end]="#006f76"
+
+# Upload: magenta to orange.
+theme[upload_start]="#794982"
+theme[upload_mid]="#9552a2"
+theme[upload_end]="#aa6025"

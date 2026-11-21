@@ -2,8 +2,8 @@
 """Print every env-ubuntu theme surface in the terminal.
 
 Reads the same tracked files that `color_theme <name>` applies, so what you see
-here is what Kitty, Vim, Git delta, bat, jq, and Pi will render. Use it to debug
-a palette change before or after switching themes.
+here is what Kitty, btop, Vim, Git delta, bat, jq, and Pi will render. Use it to
+debug a palette change before or after switching themes.
 
 Run it from any directory:
 
@@ -42,6 +42,7 @@ THEMES: dict[str, dict[str, str | None]] = {
         "pi": None,
         "pi_name": "dark",
         "bat": "1337",
+        "btop": "themes/btop/default.theme",
     },
     "remarkable": {
         "mode": "light",
@@ -52,6 +53,7 @@ THEMES: dict[str, dict[str, str | None]] = {
         "pi": "homelander/_home/.pi/agent/themes/remarkable.json",
         "pi_name": "remarkable",
         "bat": "ansi",
+        "btop": "themes/btop/remarkable.theme",
     },
 }
 
@@ -249,6 +251,18 @@ def parse_vim(path: Path) -> list[dict[str, object]]:
     return groups
 
 
+def parse_btop(path: Path) -> dict[str, str]:
+    text = read(path)
+    values: dict[str, str] = {}
+    if text is None:
+        return values
+    key_re = re.compile(r'^theme\[([a-z_]+)\]="(#[0-9a-fA-F]{6})"')
+    for line in text.splitlines():
+        if match := key_re.match(line.strip()):
+            values[match.group(1)] = match.group(2).lower()
+    return values
+
+
 def parse_gitconfig(path: Path) -> dict[str, dict[str, str]]:
     text = read(path)
     sections: dict[str, dict[str, str]] = {}
@@ -361,7 +375,7 @@ def theme_files(theme: str) -> dict[str, Path | None]:
     spec = THEMES[theme]
     return {
         key: (REPO_ROOT / str(spec[key]) if spec.get(key) else None)
-        for key in ("palette", "kitty", "git", "vim", "pi")
+        for key in ("palette", "kitty", "git", "vim", "pi", "btop")
     }
 
 
@@ -663,6 +677,36 @@ def applied_path(tracked: Path) -> Path:
         return tracked
 
 
+def section_btop(files: dict[str, Path | None], pal: dict[str, object]) -> None:
+    path = files["btop"]
+    heading("btop", relative(path) if path else "missing")
+    if not path:
+        return
+    values = parse_btop(path)
+    if not values:
+        print(paint("   no theme keys found", fg=BASE["error"]))
+        return
+    background = pal.get("background") or BASE["panel"]
+    items: dict[str, dict[str, str]] = {}
+    for key, hex_value in values.items():
+        base, _, part = key.partition("_")
+        if part in ("start", "mid", "end"):
+            items.setdefault(base, {})[part] = hex_value
+        else:
+            items.setdefault(key, {"value": hex_value})
+    for name, parts in items.items():
+        if "value" in parts:
+            hex_value = parts["value"]
+            print(
+                field(name, f"{swatch(hex_value)} {hex_value}  ", width=16)
+                + sample(hex_value, "Aa", bg=str(background))
+            )
+            continue
+        stops = [parts[part] for part in ("start", "mid", "end") if part in parts]
+        bar = "".join(paint("███", fg=stop) for stop in stops)
+        print(field(name, f"{bar}  {' '.join(stops)}", width=16))
+
+
 def section_applied(theme: str, files: dict[str, Path | None]) -> None:
     current = active_theme()
     note = f"active theme file reports: {current or 'none'}"
@@ -673,8 +717,9 @@ def section_applied(theme: str, files: dict[str, Path | None]) -> None:
     generated = {
         "kitty": HOME / ".config/env-ubuntu/kitty-theme.conf",
         "git": HOME / ".config/env-ubuntu/git-theme.gitconfig",
+        "btop": HOME / ".config/btop/themes" / f"env-ubuntu-{theme}.theme",
     }
-    for label in ("palette", "kitty", "git", "vim", "pi"):
+    for label in ("palette", "kitty", "git", "vim", "pi", "btop"):
         tracked = files[label]
         if tracked is None:
             state_line("·", BASE["dim"], label, "skipped", "no tracked file")
@@ -766,6 +811,7 @@ def main(argv: list[str]) -> int:
         section_vim(files, pal)
         section_git(files)
         section_pi(files, spec, pal)
+        section_btop(files, pal)
         section_bat(spec)
         section_jq()
         section_applied(theme, files)

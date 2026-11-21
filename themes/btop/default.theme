@@ -1,0 +1,70 @@
+# Base16 Default Dark — btop theme derived from themes/kitty/default.conf
+# Dark surfaces, light text, and palette accents.
+#
+# All values come from the base16 palette in
+# homelander/_home/.config/base16-shell/base16-default.dark.sh.
+
+# Dark background, light text.
+theme[main_bg]="#181818"
+theme[main_fg]="#d8d8d8"
+
+# Titles and keyboard shortcut highlights use the blue accent.
+theme[title]="#7cafc2"
+theme[hi_fg]="#7cafc2"
+
+# Selected process row: raised surface with bright text.
+theme[selected_bg]="#383838"
+theme[selected_fg]="#f8f8f8"
+
+# Inactive text stays quiet but readable.
+theme[inactive_fg]="#585858"
+
+# Process details, mini graphs, and status text.
+theme[proc_misc]="#86c1b9"
+
+# Box outlines: one accent per box, neutral gray for processes.
+theme[cpu_box]="#7cafc2"
+theme[mem_box]="#86c1b9"
+theme[net_box]="#ba8baf"
+theme[proc_box]="#585858"
+theme[div_line]="#383838"
+
+# Temperature: green to amber to red.
+theme[temp_start]="#a1b56c"
+theme[temp_mid]="#f7ca88"
+theme[temp_end]="#ab4642"
+
+# CPU: blue to cyan to green.
+theme[cpu_start]="#7cafc2"
+theme[cpu_mid]="#86c1b9"
+theme[cpu_end]="#a1b56c"
+
+# Free memory and disk: dark grays.
+theme[free_start]="#383838"
+theme[free_mid]="#585858"
+theme[free_end]="#b8b8b8"
+
+# Cached: cyan to blue to green.
+theme[cached_start]="#86c1b9"
+theme[cached_mid]="#7cafc2"
+theme[cached_end]="#a1b56c"
+
+# Available: yellow to orange to red.
+theme[available_start]="#f7ca88"
+theme[available_mid]="#dc9656"
+theme[available_end]="#ab4642"
+
+# Used: red to orange to brown.
+theme[used_start]="#ab4642"
+theme[used_mid]="#dc9656"
+theme[used_end]="#a16946"
+
+# Download: blue to cyan to green.
+theme[download_start]="#7cafc2"
+theme[download_mid]="#86c1b9"
+theme[download_end]="#a1b56c"
+
+# Upload: magenta to red to orange.
+theme[upload_start]="#ba8baf"
+theme[upload_mid]="#ab4642"
+theme[upload_end]="#dc9656"

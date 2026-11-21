@@ -49,6 +49,11 @@ alias deps='jq "{"prod":.dependencies, "dev":.devDependencies}" package.json'
 
 alias recolor="color-theme default"
 
+# btop follows color-theme; htop does not, so htop now opens btop.
+if command -v btop > /dev/null 2>&1; then
+	alias htop='btop'
+fi
+
 alias k=kubectl
 
 alias tfver="${HOME}/env-ubuntu/installers/terraform-cli.manual.bash"
