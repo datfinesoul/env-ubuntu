@@ -24,6 +24,11 @@ Do not symlink a file that an app rewrites. Render it instead. Never track gener
 
 Run `./test/run.bash` after you change a script. It needs `jq` and `shellcheck`.
 
+## Text search
+
+- Use `rg` or the `grep` tool for text searches. Start with a literal substring search across the files the user names. Narrow the search only after you inspect the matches.
+- Use `awk` or a custom script only when you need to parse or summarize the matches.
+
 ## Safety model
 
 Pi's enabled tool list is not a permission sandbox. The boundaries in this file are behavioral controls. Use an isolated environment or a permission-gating extension when you need technical enforcement.
@@ -33,6 +38,11 @@ Pi's enabled tool list is not a permission sandbox. The boundaries in this file 
 - Never commit secrets, credentials, or private data.
 - Never modify global settings or any other file under `~/.pi/agent/` unless the user asks for a specific edit and then approves it a second time. Prefer project settings.
 - Consult the Pi documentation shipped with the installed Pi before changing extension, package, settings, or TUI behavior.
+
+## Reviews
+
+- Report only issues that matter. Omit cosmetic details and personal preferences unless the user asks for them or they violate a project requirement.
+- Recommend changes only for problems that evidence shows are real in this project. A problem does not need to have occurred, but show how it can occur under conditions the project supports. If you find no issue worth fixing, say so. Do not invent a problem just to offer a suggestion.
 
 ## Response item identifiers
 
@@ -120,6 +130,7 @@ Load the matching skill before acting:
 
 When the next step depends on a choice, call the `ask_user_question` tool before you continue, unless an exception below applies.
 Do not list open decisions as prose, except as allowed below.
+Write one short message before the tool call with the context the user needs to decide. It does not replace the tool call.
 Ask one question per tool call.
 Give options when the choices are known.
 If the user replies with a question or asks for clarification, answer it in prose and end the turn.

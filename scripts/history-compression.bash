@@ -30,11 +30,20 @@ fi
 # Collapse duplicates; keep each command's last occurrence and timestamp in file order.
 awk '
 /^#/ { ts=$0; next }
-{ order[++n]=$0; last_index[$0]=n; last_ts[$0]=ts }
+{
+  # Ignore trailing blanks only on simple command lines with bare words.
+  key=$0
+  if (key ~ /^[[:alnum:]_.\/~-]+([[:blank:]]+[[:alnum:]_.\/~-]+)*[[:blank:]]+$/)
+    sub(/[[:blank:]]+$/, "", key)
+  order[++n]=$0
+  keys[n]=key
+  last_index[key]=n
+  last_ts[key]=ts
+}
 END {
   for (i=1; i<=n; i++) {
-    if (last_index[order[i]] == i) {
-      print last_ts[order[i]]
+    if (last_index[keys[i]] == i) {
+      print last_ts[keys[i]]
       print order[i]
     }
   }
